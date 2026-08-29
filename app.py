@@ -8,7 +8,7 @@ from PIL import Image
 import PyPDF2
 from google import genai
 
-# Page Configuration for all devices (Mobile / Tablet / PC)
+# Page Configuration
 st.set_page_config(
     page_title="Mrs. Kheffa Eletreby | English Assessments",
     page_icon="📝",
@@ -16,10 +16,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom Responsive CSS Styling
+# Responsive Custom Styles
 st.markdown("""
     <style>
-    /* Responsive Text and Container */
     .main-title-box {
         background: linear-gradient(135deg, #1E3A8A, #3B82F6);
         padding: 20px 15px;
@@ -29,40 +28,14 @@ st.markdown("""
         box-shadow: 0 4px 10px rgba(0,0,0,0.12);
         text-align: center;
     }
-    .main-title-box h2 {
-        font-size: 1.45rem;
-        margin: 0;
-        font-weight: 700;
-    }
-    .main-title-box h3 {
-        font-size: 1.15rem;
-        margin: 6px 0;
-        color: #E0E7FF;
-        font-weight: 600;
-    }
-    .main-title-box p {
-        font-size: 0.95rem;
-        margin: 0;
-        color: #DBEAFE;
-    }
-    .stRadio label, .stSelectbox label, .stTextInput label {
-        font-size: 1.05rem !important;
-        font-weight: 600 !important;
-    }
-    div[data-baseweb="select"] {
-        border-radius: 8px !important;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 10px;
-        height: 3em;
-        font-weight: bold;
-        font-size: 1.05rem;
-    }
+    .main-title-box h2 { font-size: 1.45rem; margin: 0; font-weight: 700; }
+    .main-title-box h3 { font-size: 1.15rem; margin: 6px 0; color: #E0E7FF; font-weight: 600; }
+    .main-title-box p { font-size: 0.95rem; margin: 0; color: #DBEAFE; }
+    .stRadio label, .stSelectbox label, .stTextInput label { font-size: 1.05rem !important; font-weight: 600 !important; }
+    .stButton>button { width: 100%; border-radius: 10px; height: 3em; font-weight: bold; font-size: 1.05rem; }
     </style>
 """, unsafe_allow_html=True)
 
-# Teacher Header
 st.markdown("""
     <div class="main-title-box">
         <h2>🎓 English Assessment Platform</h2>
@@ -72,13 +45,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 QUIZ_FILE = "active_quiz.json"
-TEACHER_PASSWORD = "admin"  # كلمة سر لوحة تحكم المعلمة
+TEACHER_PASSWORD = "admin"
 
 def save_quiz_data(data, title):
-    payload = {
-        "title": title,
-        "questions": data
-    }
+    payload = {"title": title, "questions": data}
     with open(QUIZ_FILE, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
@@ -92,21 +62,16 @@ def load_quiz_data():
     return None
 
 def clean_text_for_grading(text):
-    """Clean string by removing all punctuation, extra spaces, and lowercase it."""
     if not text:
         return ""
-    # Remove all punctuation marks: . , ! ? ' " ; : - etc.
     text = text.translate(str.maketrans('', '', string.punctuation + '؟،؛«»ـ'))
     text = text.lower()
     return " ".join(text.split())
 
-# Sidebar Navigation
 st.sidebar.title("Navigation")
 app_mode = st.sidebar.radio("Go to:", ["Student Area (الامتحان)", "Teacher Dashboard (لوحة المعلمة)"])
 
-# ==========================================
 # 1. TEACHER DASHBOARD
-# ==========================================
 if app_mode == "Teacher Dashboard (لوحة المعلمة)":
     st.subheader("🔒 Teacher Control Panel")
     pwd = st.text_input("Enter Teacher Password:", type="password")
@@ -114,7 +79,7 @@ if app_mode == "Teacher Dashboard (لوحة المعلمة)":
     if pwd == TEACHER_PASSWORD:
         st.success("Welcome, Mrs. Kheffa! You can now publish your exact quiz.")
         
-        quiz_title = st.text_input("Quiz Title / Grade:", "Prep 2 - Unit 1 Assessment")
+        quiz_title = st.text_input("Quiz Title / Grade:", "Prep 2 - Unit Assessment")
         api_key = st.text_input("Gemini API Key:", type="password")
         
         uploaded_file = st.file_uploader("Upload PDF or Image (Exam / Worksheet):", type=["pdf", "png", "jpg", "jpeg"])
@@ -145,8 +110,8 @@ if app_mode == "Teacher Dashboard (لوحة المعلمة)":
                     prompt = """
                     CRITICAL INSTRUCTION:
                     You are a strict exam transcriber and parser.
-                    DO NOT invent, generate, hallucinate, or add any new questions.
-                    Extract and use ONLY the exact questions from the teacher's input/image/PDF.
+                    DO NOT invent, generate, hallucinate, or add any new questions of your own.
+                    Extract and use ONLY the exact questions provided in the user input / file / image.
 
                     Convert each question into one of the following JSON structures:
                     1. "mcq": For multiple choice questions. Keep original choices.
@@ -155,15 +120,7 @@ if app_mode == "Teacher Dashboard (لوحة المعلمة)":
                     4. "matching": Column A item in "premise", all Column B options in "options", correct match in "answer".
                     5. "reading": Passage in "passage", question in "question", choices in "options", correct in "answer".
 
-                    Return ONLY a valid JSON array of objects without markdown fences.
-                    Format:
-                    [
-                      {"type": "mcq", "question": "...", "options": ["A", "B", "C", "D"], "answer": "A"},
-                      {"type": "fill_blank", "question": "The public garden is popular ..... teenagers.", "options": ["with", "for", "at"], "answer": "with"},
-                      {"type": "reorder", "question": "Rearrange the words to make a correct sentence:", "scrambled_words": ["play", "sports", "you", "Do"], "answer": "Do you play sports"},
-                      {"type": "matching", "premise": "1. Librarian", "options": ["A person who helps in a library", "A person who flies planes"], "answer": "A person who helps in a library"},
-                      {"type": "reading", "passage": "...", "question": "...", "options": ["..."], "answer": "..."}
-                    ]
+                    Return ONLY a valid JSON array of objects without markdown blocks.
                     """
                     contents = [prompt]
                     if image_to_send:
@@ -185,9 +142,7 @@ if app_mode == "Teacher Dashboard (لوحة المعلمة)":
     elif pwd:
         st.error("Incorrect password!")
 
-# ==========================================
 # 2. STUDENT AREA
-# ==========================================
 else:
     active_quiz = load_quiz_data()
     
@@ -198,7 +153,6 @@ else:
         questions = active_quiz.get("questions", [])
         
         st.subheader(f"📝 {q_title}")
-        
         student_name = st.text_input("Student Full Name (اسم الطالب رباعي):", key="stu_name")
         
         if st.session_state.get('submitted', False):
@@ -215,43 +169,21 @@ else:
                     
                     if q_type in ["mcq", "reading"]:
                         st.write(q.get('question', ''))
-                        user_answers[idx] = st.radio(
-                            "Choose the correct answer:",
-                            options=q.get('options', []),
-                            key=f"stu_q_{idx}",
-                            index=None
-                        )
+                        user_answers[idx] = st.radio("Choose the correct answer:", options=q.get('options', []), key=f"stu_q_{idx}", index=None)
                     elif q_type == "fill_blank":
                         st.write(q.get('question', ''))
-                        user_answers[idx] = st.selectbox(
-                            "Select the missing word:",
-                            options=["-- Select --"] + q.get('options', []),
-                            key=f"stu_q_{idx}"
-                        )
+                        user_answers[idx] = st.selectbox("Select the missing word:", options=["-- Select --"] + q.get('options', []), key=f"stu_q_{idx}")
                     elif q_type == "matching":
                         st.write(f"🔹 Match: **{q.get('premise', '')}**")
-                        user_answers[idx] = st.selectbox(
-                            "Select correct match:",
-                            options=["-- Select Match --"] + q.get('options', []),
-                            key=f"stu_q_{idx}"
-                        )
+                        user_answers[idx] = st.selectbox("Select correct match:", options=["-- Select Match --"] + q.get('options', []), key=f"stu_q_{idx}")
                     elif q_type == "reorder":
                         st.write(q.get('question', 'Rearrange the following words:'))
                         words_list = q.get('scrambled_words', [])
                         if words_list:
-                            st.caption("💡 Select the words in the correct order:")
-                            selected_words = st.multiselect(
-                                "Word order:",
-                                options=words_list,
-                                key=f"stu_reorder_{idx}"
-                            )
+                            selected_words = st.multiselect("Word order:", options=words_list, key=f"stu_reorder_{idx}")
                             user_answers[idx] = " ".join(selected_words)
                         else:
-                            user_answers[idx] = st.text_input(
-                                "Type the sentence in correct order:",
-                                key=f"stu_text_reorder_{idx}"
-                            )
-                            
+                            user_answers[idx] = st.text_input("Type the sentence in correct order:", key=f"stu_text_reorder_{idx}")
                     st.write("---")
                     
                 submit_btn = st.form_submit_button("Submit Exam & View Results 📊")
@@ -265,25 +197,22 @@ else:
                         st.session_state['final_student_name'] = student_name
                         st.rerun()
 
-        # Results & Model Answers
+        # Grading
         if st.session_state.get('submitted', False):
             st.write("---")
             st.subheader("📋 Results & Model Answers")
-            
             score = 0
             total = len(questions)
             user_answers = st.session_state.get('answers', {})
             s_name = st.session_state.get('final_student_name', 'Student')
-            
             breakdown_text = f"*Exam:* {q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {s_name}\n"
             
             for idx, q in enumerate(questions):
                 q_type = q.get('type', 'mcq')
                 ans = user_answers.get(idx, "")
                 correct = q.get('answer', '')
-                
-                # Grading logic with Punctuation & Case-Insensitive tolerance
                 is_correct = False
+                
                 if q_type in ["reorder", "fill_blank"]:
                     if clean_text_for_grading(str(ans)) == clean_text_for_grading(str(correct)) and ans:
                         is_correct = True
@@ -301,7 +230,6 @@ else:
                     
             percentage = round((score / total) * 100, 1)
             st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
-            
             breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
             
             teacher_phone = "201090570624"
