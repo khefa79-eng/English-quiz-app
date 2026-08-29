@@ -50,7 +50,6 @@ def save_exam_to_disk(title, questions):
     data = {"title": title, "questions": questions}
     with open(EXAM_STORAGE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    # Reset submissions when a new exam is published
     if os.path.exists(SUBMISSIONS_FILE):
         os.remove(SUBMISSIONS_FILE)
 
@@ -72,11 +71,21 @@ def load_submissions():
             return {}
     return {}
 
-def record_submission(student_name, score, total, percentage):
+def clean_text_for_grading(text):
+    if not text:
+        return ""
+    text = text.translate(str.maketrans('', '', string.punctuation + '؟،؛«»ـ'))
+    text = text.lower()
+    return " ".join(text.split())
+
+def record_submission(student_name, student_phone, student_grade, score, total, percentage):
     submissions = load_submissions()
-    norm_name = clean_text_for_grading(student_name)
-    submissions[norm_name] = {
+    clean_phone = re.sub(r'\D', '', student_phone)
+    key_id = clean_phone if clean_phone else clean_text_for_grading(student_name)
+    submissions[key_id] = {
         "full_name": student_name.strip(),
+        "phone": student_phone.strip(),
+        "grade": student_grade.strip(),
         "score": score,
         "total": total,
         "percentage": percentage,
@@ -85,13 +94,6 @@ def record_submission(student_name, score, total, percentage):
     with open(SUBMISSIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(submissions, f, ensure_ascii=False, indent=2)
 
-def clean_text_for_grading(text):
-    if not text:
-        return ""
-    text = text.translate(str.maketrans('', '', string.punctuation + '؟،؛«»ـ'))
-    text = text.lower()
-    return " ".join(text.split())
-
 def extract_json_safely(raw_text):
     match = re.search(r'\[.*\]', raw_text, re.DOTALL)
     if match:
@@ -99,12 +101,169 @@ def extract_json_safely(raw_text):
     cleaned = raw_text.replace("```json", "").replace("```", "").strip()
     return json.loads(cleaned)
 
-# Teacher Control Panel
-with st.expander("⚙️ Teacher Control Panel (لوحة المعلمة)", expanded=False):
-    pwd = st.text_input("Enter Teacher Password:", type="password", key="admin_pwd")
+# --- STUDENT INTERFACE ---
+active_exam = load_exam_from_disk()
+
+if active_exam and active_exam.get("questions"):
+    questions = active_exam["questions"]
+    q_title = active_exam.get("title", "English Assessment")
     
-    if pwd == "admin":
-        st.success("أهلاً بكِ! يمكنك إعداد الامتحان وإدارة سجل الإجابات.")
+    st.subheader(f"📝 {q_title}")
+    
+    # Step 1: Student Login / Verification
+    if 'current_verified_student' not in st.session_state:
+        st.markdown("### 👤 بيانات الطالب للدخول للاختبار")
+        stu_name = st.text_input("اسم الطالب رباعي (Student Full Name):", key="gate_student_name")
+        stu_phone = st.text_input("رقم تليفون الطالب أو ولي الأمر (Phone Number):", key="gate_student_phone")
+        stu_grade = st.selectbox("الصف الدراسي (Grade):", [
+            "-- اختر الصف الدراسي --",
+            "Primary 4 (رابعة ابتدائي)",
+            "Primary 5 (خامسة ابتدائي)",
+            "Primary 6 (سادسة ابتدائي)",
+            "Prep 1 (أولى إعدادي)",
+            "Prep 2 (تانية إعدادي)",
+            "Prep 3 (تالتة إعدادي)",
+            "Secondary 1 (أولى ثانوي)",
+            "Secondary 2 (تانية ثانوي)",
+            "Secondary 3 (تالتة ثانوي)"
+        ], key="gate_student_grade")
+        
+        start_btn = st.button("🚀 بدء الاختبار (Start Exam)")
+        
+        if start_btn:
+            clean_phone_input = re.sub(r'\D', '', stu_phone)
+            if not stu_name.strip():
+                st.error("يرجى كتابة الاسم رباعي للمتابعة!")
+            elif not clean_phone_input or len(clean_phone_input) < 10:
+                st.error("يرجى كتابة رقم هاتف صحيح مكون من 11 رقماً!")
+            elif stu_grade == "-- اختر الصف الدراسي --":
+                st.error("يرجى اختيار الصف الدراسي!")
+            else:
+                norm_name = clean_text_for_grading(stu_name)
+                all_subs = load_submissions()
+                
+                # Check duplication by phone or name
+                if clean_phone_input in all_subs or norm_name in all_subs:
+                    prev = all_subs.get(clean_phone_input, all_subs.get(norm_name))
+                    st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بهذا الرقم/الاسم بتاريخ {prev['timestamp']}. لا يُسمح بإعادة الاختبار.")
+                    st.info(f"🏆 **درجتك المسجلة:** {prev['score']} / {prev['total']} ({prev['percentage']}%)")
+                    
+                    teacher_phone = "201090570624"
+                    wa_msg = f"*Exam:* {q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {prev['full_name']}\n*Grade:* {prev.get('grade', '')}\n*Phone:* {prev.get('phone', '')}\n*Recorded Score:* {prev['score']}/{prev['total']} ({prev['percentage']}%)"
+                    whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(wa_msg)}"
+                    
+                    st.markdown(f"""
+                        <div style="text-align: center; margin-top: 15px;">
+                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
+                                📲 Send Score to Mrs. Kheffa on WhatsApp
+                            </a>
+                        </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.session_state['current_verified_student'] = stu_name.strip()
+                    st.session_state['current_verified_phone'] = clean_phone_input
+                    st.session_state['current_verified_grade'] = stu_grade
+                    st.rerun()
+    else:
+        # Step 2: Display Exam Questions for Verified Student
+        active_student = st.session_state['current_verified_student']
+        active_phone = st.session_state['current_verified_phone']
+        active_grade = st.session_state['current_verified_grade']
+        
+        if not st.session_state.get('exam_submitted', False):
+            st.info(f"مرحباً بك يا **{active_student}** ({active_grade})! أجب عن جميع الأسئلة ثم اضغط Submit Exam.")
+            
+            with st.form("interactive_exam_form"):
+                user_answers = {}
+                for idx, q in enumerate(questions):
+                    q_type = q.get('type', 'mcq')
+                    st.markdown(f"**Question {idx + 1} (1 Mark)**")
+                    
+                    if q_type == "reading" and "passage" in q:
+                        st.info(f"📖 **Read the passage:**\n\n{q['passage']}")
+                    
+                    if q_type in ["mcq", "reading"]:
+                        st.write(q.get('question', ''))
+                        user_answers[idx] = st.radio("Choose correct answer:", options=q.get('options', []), key=f"ans_mcq_{idx}", index=None)
+                    elif q_type == "fill_blank":
+                        st.write(q.get('question', ''))
+                        user_answers[idx] = st.selectbox("Select missing word:", options=["-- Select --"] + q.get('options', []), key=f"ans_fill_{idx}")
+                    elif q_type == "matching":
+                        st.write(f"🔹 Match: **{q.get('premise', '')}**")
+                        user_answers[idx] = st.selectbox("Select match:", options=["-- Select Match --"] + q.get('options', []), key=f"ans_match_{idx}")
+                    elif q_type == "reorder":
+                        st.write(q.get('question', 'Rearrange the following words:'))
+                        words_list = q.get('scrambled_words', [])
+                        if words_list:
+                            selected_words = st.multiselect("Select words in order:", options=words_list, key=f"ans_reorder_{idx}")
+                            user_answers[idx] = " ".join(selected_words)
+                        else:
+                            user_answers[idx] = st.text_input("Write sentence in correct order:", key=f"ans_txt_reorder_{idx}")
+                    st.write("---")
+                    
+                submit = st.form_submit_button("Submit Exam & View Results 📊")
+                if submit:
+                    st.session_state['exam_submitted'] = True
+                    st.session_state['submitted_answers'] = user_answers
+                    st.rerun()
+
+        # Step 3: Exam Results & Grading
+        if st.session_state.get('exam_submitted', False):
+            st.subheader("📋 Results & Model Answers")
+            score = 0
+            total = len(questions)
+            user_answers = st.session_state.get('submitted_answers', {})
+            
+            breakdown_text = f"*Exam:* {q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {active_student}\n*Grade:* {active_grade}\n*Phone:* {active_phone}\n"
+            
+            for idx, q in enumerate(questions):
+                q_type = q.get('type', 'mcq')
+                ans = user_answers.get(idx, "")
+                correct = q.get('answer', '')
+                is_correct = False
+                
+                if q_type in ["reorder", "fill_blank"]:
+                    if clean_text_for_grading(str(ans)) == clean_text_for_grading(str(correct)) and ans:
+                        is_correct = True
+                else:
+                    if str(ans).strip() == str(correct).strip() and ans not in ["-- Select --", "-- Select Match --", None, ""]:
+                        is_correct = True
+                        
+                if is_correct:
+                    score += 1
+                    st.success(f"**Q{idx + 1}: Correct ✅** (Your answer: {ans})")
+                    breakdown_text += f"Q{idx+1}: Correct ✅\n"
+                else:
+                    st.error(f"**Q{idx + 1}: Incorrect ❌** | Your answer: {ans or 'None'} | **Model Answer:** {correct}")
+                    breakdown_text += f"Q{idx+1}: Incorrect ❌ (Ans: {ans or 'None'} | Correct: {correct})\n"
+                    
+            percentage = round((score / total) * 100, 1)
+            st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
+            breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
+            
+            # Record submission permanently to block repeat
+            record_submission(active_student, active_phone, active_grade, score, total, percentage)
+            
+            teacher_phone = "201090570624"
+            whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(breakdown_text)}"
+            
+            st.markdown(f"""
+                <div style="text-align: center; margin-top: 25px;">
+                    <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 28px; text-decoration: none; font-size: 17px; font-weight: bold; border-radius: 8px; display: inline-block;">
+                        📲 Send Result to Mrs. Kheffa on WhatsApp
+                    </a>
+                </div>
+            """, unsafe_allow_html=True)
+else:
+    st.info("👋 لا يوجد اختبار نشط حالياً. يرجى الانتظار حتى تقوم المعلمة بنشر الاختبار.")
+
+# --- HIDDEN TEACHER PORTAL (At the very bottom) ---
+st.write("---")
+with st.expander("🔒 Admin Portal", expanded=False):
+    admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
+    
+    if admin_pass == "admin":
+        st.success("أهلاً بكِ مس خفة! هذه لوحة التحكم الخاصة بكِ فقط.")
         quiz_title = st.text_input("Quiz Title / Grade:", "Prep 1 - Assessment", key="exam_title_input")
         api_key = st.text_input("Gemini API Key:", type="password", key="api_key_input")
         
@@ -113,13 +272,13 @@ with st.expander("⚙️ Teacher Control Panel (لوحة المعلمة)", expan
         
         col_pub, col_rst = st.columns([2, 1])
         with col_pub:
-            if st.button("🚀 Generate & Publish Exam"):
+            if st.button("🚀 Publish Exam to All Students"):
                 if not api_key:
                     st.error("Please enter your Gemini API Key.")
                 elif uploaded_file is None and not raw_text.strip():
                     st.error("Please provide exam content (upload file or paste text).")
                 else:
-                    with st.spinner("Processing questions & publishing for all students..."):
+                    with st.spinner("Processing questions & publishing..."):
                         client = genai.Client(api_key=api_key)
                         prompt = """
                         Strictly extract and convert the provided English exam questions into a JSON array.
@@ -127,30 +286,10 @@ with st.expander("⚙️ Teacher Control Panel (لوحة المعلمة)", expan
                         
                         Return ONLY a raw JSON array like:
                         [
-                          {
-                            "type": "mcq",
-                            "question": "1- Eating while looking at something on my ..... is a bad habit.",
-                            "options": ["oven", "table", "screen", "school"],
-                            "answer": "screen"
-                          },
-                          {
-                            "type": "fill_blank",
-                            "question": "The public garden is very popular ..... teenagers.",
-                            "options": ["with", "for", "at"],
-                            "answer": "with"
-                          },
-                          {
-                            "type": "matching",
-                            "premise": "Librarian",
-                            "options": ["A person who helps in a library", "A person who flies planes"],
-                            "answer": "A person who helps in a library"
-                          },
-                          {
-                            "type": "reorder",
-                            "question": "Rearrange the words:",
-                            "scrambled_words": ["play", "sports", "you", "Do"],
-                            "answer": "Do you play sports"
-                          }
+                          {"type": "mcq", "question": "...", "options": ["A", "B", "C", "D"], "answer": "A"},
+                          {"type": "fill_blank", "question": "...", "options": ["with", "for"], "answer": "with"},
+                          {"type": "matching", "premise": "Item A", "options": ["Choice 1", "Choice 2"], "answer": "Choice 1"},
+                          {"type": "reorder", "question": "Rearrange the words:", "scrambled_words": ["play", "sports", "you", "Do"], "answer": "Do you play sports"}
                         ]
                         """
                         contents = [prompt]
@@ -182,138 +321,15 @@ with st.expander("⚙️ Teacher Control Panel (لوحة المعلمة)", expan
                             st.error(f"حدث خطأ أثناء معالجة الأسئلة: {e}")
 
         with col_rst:
-            if st.button("🔄 Reset Submissions"):
+            if st.button("🔄 Reset All Student Submissions"):
                 if os.path.exists(SUBMISSIONS_FILE):
                     os.remove(SUBMISSIONS_FILE)
-                st.info("تم تصفير سجل الطلاب؛ يمكنهم الحل مجدداً الآن.")
+                st.info("تم تصفير سجل الطلاب؛ يمكنهم الحل مجدداً.")
 
-        # Display logged submissions
         subs = load_submissions()
         if subs:
             st.write(f"📊 **سجل الطلاب الذين أتموا الاختبار ({len(subs)} طالب):**")
             for _, s_data in subs.items():
-                st.write(f"👤 **{s_data['full_name']}** | الدرجة: {s_data['score']}/{s_data['total']} ({s_data['percentage']}%) | 🕒 {s_data['timestamp']}")
-    elif pwd:
+                st.write(f"👤 **{s_data['full_name']}** ({s_data.get('grade','')}) | هاتف: `{s_data.get('phone','')}` | الدرجة: **{s_data['score']}/{s_data['total']}** ({s_data['percentage']}%) | 🕒 {s_data['timestamp']}")
+    elif admin_pass:
         st.error("Incorrect password!")
-
-# --- Student Interactive View ---
-active_exam = load_exam_from_disk()
-
-if active_exam and active_exam.get("questions"):
-    questions = active_exam["questions"]
-    q_title = active_exam.get("title", "English Assessment")
-    
-    st.write("---")
-    st.subheader(f"📝 {q_title}")
-    
-    student_name = st.text_input("Student Full Name (اسم الطالب رباعي):", key="student_full_name")
-    norm_current_student = clean_text_for_grading(student_name)
-    all_submissions = load_submissions()
-    
-    # Check if student already submitted
-    if norm_current_student and (norm_current_student in all_submissions):
-        prev_sub = all_submissions[norm_current_student]
-        st.error(f"⚠️ عذراً يا {prev_sub['full_name']}! لقد قمت بأداء هذا الاختبار مسبقاً بتاريخ {prev_sub['timestamp']}. لا يُسمح بإعادة الاختبار.")
-        st.info(f"🏆 **درجتك المسجلة:** {prev_sub['score']} / {prev_sub['total']} ({prev_sub['percentage']}%)")
-        
-        teacher_phone = "201090570624"
-        wa_msg = f"*Exam:* {q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {prev_sub['full_name']}\n*Recorded Score:* {prev_sub['score']}/{prev_sub['total']} ({prev_sub['percentage']}%)"
-        whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(wa_msg)}"
-        
-        st.markdown(f"""
-            <div style="text-align: center; margin-top: 20px;">
-                <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
-                    📲 Send Score to Mrs. Kheffa on WhatsApp
-                </a>
-            </div>
-        """, unsafe_allow_html=True)
-    else:
-        if not st.session_state.get('exam_submitted', False):
-            with st.form("interactive_exam_form"):
-                user_answers = {}
-                for idx, q in enumerate(questions):
-                    q_type = q.get('type', 'mcq')
-                    st.markdown(f"**Question {idx + 1} (1 Mark)**")
-                    
-                    if q_type == "reading" and "passage" in q:
-                        st.info(f"📖 **Read the passage:**\n\n{q['passage']}")
-                    
-                    if q_type in ["mcq", "reading"]:
-                        st.write(q.get('question', ''))
-                        user_answers[idx] = st.radio("Choose correct answer:", options=q.get('options', []), key=f"ans_mcq_{idx}", index=None)
-                    elif q_type == "fill_blank":
-                        st.write(q.get('question', ''))
-                        user_answers[idx] = st.selectbox("Select missing word:", options=["-- Select --"] + q.get('options', []), key=f"ans_fill_{idx}")
-                    elif q_type == "matching":
-                        st.write(f"🔹 Match: **{q.get('premise', '')}**")
-                        user_answers[idx] = st.selectbox("Select match:", options=["-- Select Match --"] + q.get('options', []), key=f"ans_match_{idx}")
-                    elif q_type == "reorder":
-                        st.write(q.get('question', 'Rearrange the following words:'))
-                        words_list = q.get('scrambled_words', [])
-                        if words_list:
-                            selected_words = st.multiselect("Select words in order:", options=words_list, key=f"ans_reorder_{idx}")
-                            user_answers[idx] = " ".join(selected_words)
-                        else:
-                            user_answers[idx] = st.text_input("Write sentence in correct order:", key=f"ans_txt_reorder_{idx}")
-                    st.write("---")
-                    
-                submit = st.form_submit_button("Submit Exam & View Results 📊")
-                if submit:
-                    if not student_name.strip():
-                        st.error("Please enter your full name first!")
-                    else:
-                        st.session_state['exam_submitted'] = True
-                        st.session_state['submitted_answers'] = user_answers
-                        st.session_state['submitted_name'] = student_name
-                        st.rerun()
-
-        # Results & Permanent Submission
-        if st.session_state.get('exam_submitted', False):
-            st.subheader("📋 Results & Model Answers")
-            score = 0
-            total = len(questions)
-            user_answers = st.session_state.get('submitted_answers', {})
-            s_name = st.session_state.get('submitted_name', student_name) or "Student"
-            
-            breakdown_text = f"*Exam:* {q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {s_name}\n"
-            
-            for idx, q in enumerate(questions):
-                q_type = q.get('type', 'mcq')
-                ans = user_answers.get(idx, "")
-                correct = q.get('answer', '')
-                is_correct = False
-                
-                if q_type in ["reorder", "fill_blank"]:
-                    if clean_text_for_grading(str(ans)) == clean_text_for_grading(str(correct)) and ans:
-                        is_correct = True
-                else:
-                    if str(ans).strip() == str(correct).strip() and ans not in ["-- Select --", "-- Select Match --", None, ""]:
-                        is_correct = True
-                        
-                if is_correct:
-                    score += 1
-                    st.success(f"**Q{idx + 1}: Correct ✅** (Your answer: {ans})")
-                    breakdown_text += f"Q{idx+1}: Correct ✅\n"
-                else:
-                    st.error(f"**Q{idx + 1}: Incorrect ❌** | Your answer: {ans or 'None'} | **Model Answer:** {correct}")
-                    breakdown_text += f"Q{idx+1}: Incorrect ❌ (Ans: {ans or 'None'} | Correct: {correct})\n"
-                    
-            percentage = round((score / total) * 100, 1)
-            st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
-            breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
-            
-            # Record student permanently to lock further attempts
-            record_submission(s_name, score, total, percentage)
-            
-            teacher_phone = "201090570624"
-            whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(breakdown_text)}"
-            
-            st.markdown(f"""
-                <div style="text-align: center; margin-top: 25px;">
-                    <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 28px; text-decoration: none; font-size: 17px; font-weight: bold; border-radius: 8px; display: inline-block;">
-                        📲 Send Result to Mrs. Kheffa on WhatsApp
-                    </a>
-                </div>
-            """, unsafe_allow_html=True)
-else:
-    st.info("👋 لا يوجد اختبار نشط حالياً. يرجى من المعلمة توليد الاختبار من لوحة التحكم بالأعلى.")
