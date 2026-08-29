@@ -7,14 +7,12 @@ from PIL import Image
 from google import genai
 from google.genai import types
 
-# Setup Page
 st.set_page_config(
     page_title="Mrs. Kheffa Eletreby | English Assessments",
     page_icon="📝",
     layout="centered"
 )
 
-# Custom Styling
 st.markdown("""
     <style>
     .main-title-box {
@@ -120,22 +118,36 @@ with st.expander("⚙️ Teacher Control Panel (إعداد وتوليد الاخ
                     if raw_text.strip():
                         contents.append(f"\n--- EXAM CONTENT ---\n{raw_text}")
                         
-                    try:
-                        response = client.models.generate_content(
-                            model="gemini-3.6-flash",
-                            contents=contents
-                        )
-                        parsed = extract_json_safely(response.text)
-                        if parsed and len(parsed) > 0:
-                            st.session_state['quiz_data'] = parsed
-                            st.session_state['current_title'] = quiz_title
-                            st.session_state['exam_submitted'] = False
-                            st.success(f"🎉 تم استخراج {len(parsed)} سؤال بنجاح! انزلي لأسفل للبدء.")
-                            st.rerun()
-                        else:
-                            st.error("لم يتم العثور على أسئلة داخل الملف. يرجى تجربة نسخ الأسئلة ولصقها في المربع مباشرة.")
-                    except Exception as e:
-                        st.error(f"Error parsing exam: {e}")
+                    # Multi-model retry to prevent 503 errors
+                    models_to_try = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-1.5-flash"]
+                    response_text = None
+                    last_error = None
+                    
+                    for m in models_to_try:
+                        try:
+                            res = client.models.generate_content(model=m, contents=contents)
+                            if res and res.text:
+                                response_text = res.text
+                                break
+                        except Exception as e:
+                            last_error = e
+                            continue
+                            
+                    if response_text:
+                        try:
+                            parsed = extract_json_safely(response_text)
+                            if parsed and len(parsed) > 0:
+                                st.session_state['quiz_data'] = parsed
+                                st.session_state['current_title'] = quiz_title
+                                st.session_state['exam_submitted'] = False
+                                st.success(f"🎉 تم استخراج {len(parsed)} سؤال بنجاح! انزلي لأسفل للبدء.")
+                                st.rerun()
+                            else:
+                                st.error("لم يتم العثور على أسئلة داخل الملف. يرجى تجربة لصق نص الأسئلة مباشرة.")
+                        except Exception as parse_err:
+                            st.error(f"Error parsing response: {parse_err}")
+                    else:
+                        st.error(f"حدث ضغط مؤقت في السيرفر: {last_error}")
     elif pwd:
         st.error("Incorrect password!")
 
@@ -187,7 +199,7 @@ if 'quiz_data' in st.session_state and len(st.session_state['quiz_data']) > 0:
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
-    # Results & Model Answers
+    # Results Section
     if st.session_state.get('exam_submitted', False):
         st.subheader("📋 Results & Model Answers")
         score = 0
