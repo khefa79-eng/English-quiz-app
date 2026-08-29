@@ -1,5 +1,6 @@
 import streamlit as st
 import json
+import os
 import string
 import re
 import urllib.parse
@@ -13,6 +14,7 @@ st.set_page_config(
     layout="centered"
 )
 
+# Custom Responsive Styling
 st.markdown("""
     <style>
     .main-title-box {
@@ -40,6 +42,22 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
+EXAM_STORAGE_FILE = "current_exam.json"
+
+def save_exam_to_disk(title, questions):
+    data = {"title": title, "questions": questions}
+    with open(EXAM_STORAGE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_exam_from_disk():
+    if os.path.exists(EXAM_STORAGE_FILE):
+        try:
+            with open(EXAM_STORAGE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+    return None
+
 def clean_text_for_grading(text):
     if not text:
         return ""
@@ -54,25 +72,25 @@ def extract_json_safely(raw_text):
     cleaned = raw_text.replace("```json", "").replace("```", "").strip()
     return json.loads(cleaned)
 
-# Teacher Control Panel
-with st.expander("⚙️ Teacher Control Panel (إعداد وتوليد الاختبار)", expanded=('quiz_data' not in st.session_state)):
+# Teacher Control Panel (Collapsible)
+with st.expander("⚙️ Teacher Control Panel (لوحة المعلمة لتغيير الامتحان)", expanded=False):
     pwd = st.text_input("Enter Teacher Password:", type="password", key="admin_pwd")
     
     if pwd == "admin":
-        st.success("لوحة التحكم جاهزة! أدخلي البيانات واضغطي توليد.")
+        st.success("أهلاً بكِ مس خفة! يمكنك إعداد أو تغيير الامتحان من هنا.")
         quiz_title = st.text_input("Quiz Title / Grade:", "Prep 1 - Assessment", key="exam_title_input")
         api_key = st.text_input("Gemini API Key:", type="password", key="api_key_input")
         
         uploaded_file = st.file_uploader("Upload PDF or Image:", type=["pdf", "png", "jpg", "jpeg"])
         raw_text = st.text_area("Or paste questions text here:", height=150)
         
-        if st.button("🚀 Generate & Publish Exam"):
+        if st.button("🚀 Generate & Publish Exam to All Students"):
             if not api_key:
                 st.error("Please enter your Gemini API Key.")
             elif uploaded_file is None and not raw_text.strip():
                 st.error("Please provide exam content (upload file or paste text).")
             else:
-                with st.spinner("Processing your exact questions..."):
+                with st.spinner("Processing questions & publishing for all students..."):
                     client = genai.Client(api_key=api_key)
                     prompt = """
                     Strictly extract and convert the provided English exam questions into a JSON array.
@@ -118,8 +136,7 @@ with st.expander("⚙️ Teacher Control Panel (إعداد وتوليد الاخ
                     if raw_text.strip():
                         contents.append(f"\n--- EXAM CONTENT ---\n{raw_text}")
                         
-                    # Multi-model retry to prevent 503 errors
-                    models_to_try = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-1.5-flash"]
+                    models_to_try = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
                     response_text = None
                     last_error = None
                     
@@ -137,13 +154,11 @@ with st.expander("⚙️ Teacher Control Panel (إعداد وتوليد الاخ
                         try:
                             parsed = extract_json_safely(response_text)
                             if parsed and len(parsed) > 0:
-                                st.session_state['quiz_data'] = parsed
-                                st.session_state['current_title'] = quiz_title
-                                st.session_state['exam_submitted'] = False
-                                st.success(f"🎉 تم استخراج {len(parsed)} سؤال بنجاح! انزلي لأسفل للبدء.")
+                                save_exam_to_disk(quiz_title, parsed)
+                                st.success(f"🎉 تم نشر الاختبار '{quiz_title}' لجميع الطلاب بنجاح!")
                                 st.rerun()
                             else:
-                                st.error("لم يتم العثور على أسئلة داخل الملف. يرجى تجربة لصق نص الأسئلة مباشرة.")
+                                st.error("لم يتم العثور على أسئلة. يرجى تجربة لصق نص الأسئلة مباشرة.")
                         except Exception as parse_err:
                             st.error(f"Error parsing response: {parse_err}")
                     else:
@@ -151,10 +166,12 @@ with st.expander("⚙️ Teacher Control Panel (إعداد وتوليد الاخ
     elif pwd:
         st.error("Incorrect password!")
 
-# Student Interactive View
-if 'quiz_data' in st.session_state and len(st.session_state['quiz_data']) > 0:
-    questions = st.session_state['quiz_data']
-    q_title = st.session_state.get('current_title', 'English Assessment')
+# --- Student View (Loaded globally from server file) ---
+active_exam = load_exam_from_disk()
+
+if active_exam and active_exam.get("questions"):
+    questions = active_exam["questions"]
+    q_title = active_exam.get("title", "English Assessment")
     
     st.write("---")
     st.subheader(f"📝 {q_title}")
@@ -199,7 +216,7 @@ if 'quiz_data' in st.session_state and len(st.session_state['quiz_data']) > 0:
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
-    # Results Section
+    # Results & Grading
     if st.session_state.get('exam_submitted', False):
         st.subheader("📋 Results & Model Answers")
         score = 0
@@ -244,3 +261,5 @@ if 'quiz_data' in st.session_state and len(st.session_state['quiz_data']) > 0:
                 </a>
             </div>
         """, unsafe_allow_html=True)
+else:
+    st.info("👋 لا يوجد اختبار نشط حالياً. يرجى من المعلمة توليد الاختبار من لوحة التحكم بالأعلى.")
