@@ -138,7 +138,7 @@ with st.expander("⚙️ Teacher Control Panel (لوحة المعلمة لتغي
                         
                     try:
                         res = client.models.generate_content(
-                            model="gemini-2.5-flash",
+                            model="gemini-3.6-flash",
                             contents=contents
                         )
                         if res and res.text:
