@@ -4,8 +4,8 @@ import string
 import re
 import urllib.parse
 from PIL import Image
-import PyPDF2
 from google import genai
+from google.genai import types
 
 # Setup Page
 st.set_page_config(
@@ -69,26 +69,12 @@ with st.expander("⚙️ Teacher Control Panel (إعداد وتوليد الاخ
         raw_text = st.text_area("Or paste questions text here:", height=150)
         
         if st.button("🚀 Generate & Publish Exam"):
-            extracted_content = ""
-            image_to_send = None
-            
-            if uploaded_file is not None:
-                if uploaded_file.type == "application/pdf":
-                    reader = PyPDF2.PdfReader(uploaded_file)
-                    for page in reader.pages:
-                        extracted_content += (page.extract_text() or "") + "\n"
-                elif uploaded_file.type.startswith("image/"):
-                    image_to_send = Image.open(uploaded_file)
-            
-            if raw_text:
-                extracted_content += "\n" + raw_text
-                
             if not api_key:
                 st.error("Please enter your Gemini API Key.")
-            elif not extracted_content and image_to_send is None:
-                st.error("Please provide exam content (file or text).")
+            elif uploaded_file is None and not raw_text.strip():
+                st.error("Please provide exam content (upload file or paste text).")
             else:
-                with st.spinner("Extracting your exact questions..."):
+                with st.spinner("Processing your exact questions..."):
                     client = genai.Client(api_key=api_key)
                     prompt = """
                     Strictly extract and convert the provided English exam questions into a JSON array.
@@ -123,10 +109,16 @@ with st.expander("⚙️ Teacher Control Panel (إعداد وتوليد الاخ
                     ]
                     """
                     contents = [prompt]
-                    if image_to_send:
-                        contents.append(image_to_send)
-                    if extracted_content:
-                        contents.append(f"\n--- EXAM CONTENT ---\n{extracted_content}")
+                    
+                    if uploaded_file is not None:
+                        bytes_data = uploaded_file.getvalue()
+                        if uploaded_file.type == "application/pdf":
+                            contents.append(types.Part.from_bytes(data=bytes_data, mime_type="application/pdf"))
+                        elif uploaded_file.type.startswith("image/"):
+                            contents.append(Image.open(uploaded_file))
+                    
+                    if raw_text.strip():
+                        contents.append(f"\n--- EXAM CONTENT ---\n{raw_text}")
                         
                     try:
                         response = client.models.generate_content(
@@ -138,10 +130,10 @@ with st.expander("⚙️ Teacher Control Panel (إعداد وتوليد الاخ
                             st.session_state['quiz_data'] = parsed
                             st.session_state['current_title'] = quiz_title
                             st.session_state['exam_submitted'] = False
-                            st.success(f"🎉 تم استخراج {len(parsed)} سؤال بنجاح! انزلي لأسفل لتجربة الامتحان.")
+                            st.success(f"🎉 تم استخراج {len(parsed)} سؤال بنجاح! انزلي لأسفل للبدء.")
                             st.rerun()
                         else:
-                            st.error("لم يتم العثور على أسئلة في الملف. يرجى التأكد من محتوى الملف أو كتابة نص الأسئلة مباشرة.")
+                            st.error("لم يتم العثور على أسئلة داخل الملف. يرجى تجربة نسخ الأسئلة ولصقها في المربع مباشرة.")
                     except Exception as e:
                         st.error(f"Error parsing exam: {e}")
     elif pwd:
