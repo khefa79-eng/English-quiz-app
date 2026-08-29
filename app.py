@@ -1,19 +1,20 @@
 import streamlit as st
 import json
 import string
+import re
 import urllib.parse
 from PIL import Image
 import PyPDF2
 from google import genai
 
-# Responsive Setup
+# Setup Page
 st.set_page_config(
     page_title="Mrs. Kheffa Eletreby | English Assessments",
     page_icon="📝",
     layout="centered"
 )
 
-# Custom Responsive Styling
+# Custom Styling
 st.markdown("""
     <style>
     .main-title-box {
@@ -48,19 +49,26 @@ def clean_text_for_grading(text):
     text = text.lower()
     return " ".join(text.split())
 
-# Teacher Control Expander
+def extract_json_safely(raw_text):
+    match = re.search(r'\[.*\]', raw_text, re.DOTALL)
+    if match:
+        return json.loads(match.group(0))
+    cleaned = raw_text.replace("```json", "").replace("```", "").strip()
+    return json.loads(cleaned)
+
+# Teacher Control Panel
 with st.expander("⚙️ Teacher Control Panel (إعداد وتوليد الاختبار)", expanded=('quiz_data' not in st.session_state)):
     pwd = st.text_input("Enter Teacher Password:", type="password", key="admin_pwd")
     
     if pwd == "admin":
-        st.success("Welcome, Mrs. Kheffa! Set up your exam below.")
+        st.success("لوحة التحكم جاهزة! أدخلي البيانات واضغطي توليد.")
         quiz_title = st.text_input("Quiz Title / Grade:", "Prep 1 - Assessment", key="exam_title_input")
         api_key = st.text_input("Gemini API Key:", type="password", key="api_key_input")
         
         uploaded_file = st.file_uploader("Upload PDF or Image:", type=["pdf", "png", "jpg", "jpeg"])
         raw_text = st.text_area("Or paste questions text here:", height=150)
         
-        if st.button("🚀 Generate & Open Interactive Quiz"):
+        if st.button("🚀 Generate & Publish Exam"):
             extracted_content = ""
             image_to_send = None
             
@@ -80,47 +88,67 @@ with st.expander("⚙️ Teacher Control Panel (إعداد وتوليد الاخ
             elif not extracted_content and image_to_send is None:
                 st.error("Please provide exam content (file or text).")
             else:
-                with st.spinner("Processing your exact questions..."):
+                with st.spinner("Extracting your exact questions..."):
                     client = genai.Client(api_key=api_key)
                     prompt = """
-                    CRITICAL INSTRUCTION:
-                    You are a strict exam transcriber. DO NOT invent or add any questions.
-                    Extract and convert ONLY the teacher's exact questions into JSON.
-
-                    Format:
+                    Strictly extract and convert the provided English exam questions into a JSON array.
+                    DO NOT add any questions outside the provided material.
+                    
+                    Return ONLY a raw JSON array like:
                     [
-                      {"type": "mcq", "question": "...", "options": ["A", "B", "C", "D"], "answer": "A"},
-                      {"type": "fill_blank", "question": "...", "options": ["opt1", "opt2"], "answer": "opt1"},
-                      {"type": "reorder", "question": "Rearrange the words:", "scrambled_words": ["word1", "word2"], "answer": "word1 word2"},
-                      {"type": "matching", "premise": "Item A", "options": ["Choice 1", "Choice 2"], "answer": "Choice 1"},
-                      {"type": "reading", "passage": "...", "question": "...", "options": ["..."], "answer": "..."}
+                      {
+                        "type": "mcq",
+                        "question": "1- Eating while looking at something on my ..... is a bad habit.",
+                        "options": ["oven", "table", "screen", "school"],
+                        "answer": "screen"
+                      },
+                      {
+                        "type": "fill_blank",
+                        "question": "The public garden is very popular ..... teenagers.",
+                        "options": ["with", "for", "at"],
+                        "answer": "with"
+                      },
+                      {
+                        "type": "matching",
+                        "premise": "Librarian",
+                        "options": ["A person who helps in a library", "A person who flies planes"],
+                        "answer": "A person who helps in a library"
+                      },
+                      {
+                        "type": "reorder",
+                        "question": "Rearrange the words:",
+                        "scrambled_words": ["play", "sports", "you", "Do"],
+                        "answer": "Do you play sports"
+                      }
                     ]
-                    Return ONLY valid JSON array without markdown blocks.
                     """
                     contents = [prompt]
                     if image_to_send:
                         contents.append(image_to_send)
                     if extracted_content:
-                        contents.append(f"\n--- EXACT EXAM CONTENT ---\n{extracted_content}")
+                        contents.append(f"\n--- EXAM CONTENT ---\n{extracted_content}")
                         
                     try:
                         response = client.models.generate_content(
                             model="gemini-3.6-flash",
                             contents=contents
                         )
-                        clean_json = response.text.replace("```json", "").replace("```", "").strip()
-                        st.session_state['quiz_data'] = json.loads(clean_json)
-                        st.session_state['current_title'] = quiz_title
-                        st.session_state['exam_submitted'] = False
-                        st.success("🎉 Quiz generated successfully! Scroll down to start.")
-                        st.rerun()
+                        parsed = extract_json_safely(response.text)
+                        if parsed and len(parsed) > 0:
+                            st.session_state['quiz_data'] = parsed
+                            st.session_state['current_title'] = quiz_title
+                            st.session_state['exam_submitted'] = False
+                            st.success(f"🎉 تم استخراج {len(parsed)} سؤال بنجاح! انزلي لأسفل لتجربة الامتحان.")
+                            st.rerun()
+                        else:
+                            st.error("لم يتم العثور على أسئلة في الملف. يرجى التأكد من محتوى الملف أو كتابة نص الأسئلة مباشرة.")
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(f"Error parsing exam: {e}")
     elif pwd:
         st.error("Incorrect password!")
 
-# Student Exam View
-if 'quiz_data' in st.session_state:
+# Student Interactive View
+if 'quiz_data' in st.session_state and len(st.session_state['quiz_data']) > 0:
     questions = st.session_state['quiz_data']
     q_title = st.session_state.get('current_title', 'English Assessment')
     
@@ -167,7 +195,7 @@ if 'quiz_data' in st.session_state:
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
-    # Results Section
+    # Results & Model Answers
     if st.session_state.get('exam_submitted', False):
         st.subheader("📋 Results & Model Answers")
         score = 0
