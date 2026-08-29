@@ -3,9 +3,11 @@ import json
 import os
 import string
 import re
+import time
 import urllib.parse
 from datetime import datetime
 from PIL import Image
+import pandas as pd
 from google import genai
 from google.genai import types
 
@@ -15,7 +17,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# Custom Responsive Styling
 st.markdown("""
     <style>
     .main-title-box {
@@ -50,8 +51,6 @@ def save_exam_to_disk(title, questions):
     data = {"title": title, "questions": questions}
     with open(EXAM_STORAGE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    if os.path.exists(SUBMISSIONS_FILE):
-        os.remove(SUBMISSIONS_FILE)
 
 def load_exam_from_disk():
     if os.path.exists(EXAM_STORAGE_FILE):
@@ -101,6 +100,73 @@ def extract_json_safely(raw_text):
     cleaned = raw_text.replace("```json", "").replace("```", "").strip()
     return json.loads(cleaned)
 
+def parse_text_locally(text):
+    """Parses standard formatted text directly without calling external APIs."""
+    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    questions = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        
+        # 1. Matching
+        if re.search(r'(?i)match\s*:', line):
+            premise = re.sub(r'(?i)^\d+[\.\-]?\s*match\s*:\s*', '', line).strip()
+            options, answer = [], ""
+            i += 1
+            while i < len(lines) and not re.match(r'^\d+[\.\-]', lines[i]):
+                if re.search(r'(?i)^options\s*:', lines[i]):
+                    opt_raw = re.sub(r'(?i)^options\s*:\s*', '', lines[i]).strip('[] ')
+                    options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
+                elif re.search(r'(?i)^answer\s*:', lines[i]):
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
+                i += 1
+            if premise and options:
+                questions.append({
+                    "type": "matching",
+                    "premise": premise,
+                    "options": options,
+                    "answer": answer if answer else options[0]
+                })
+            continue
+            
+        # 2. Reorder
+        elif re.search(r'(?i)words\s*:', line):
+            words_raw = re.search(r'\[(.*?)\]', line)
+            words = [w.strip().strip('"\'') for w in words_raw.group(1).split(',')] if words_raw else []
+            answer = ""
+            i += 1
+            if i < len(lines) and re.search(r'(?i)^answer\s*:', lines[i]):
+                answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
+                i += 1
+            if words:
+                questions.append({
+                    "type": "reorder",
+                    "question": "Rearrange the words to make a correct sentence:",
+                    "scrambled_words": words,
+                    "answer": answer if answer else " ".join(words)
+                })
+            continue
+            
+        # 3. MCQ / Fill-in-the-blank
+        elif re.match(r'^\d+[\.\-]', line):
+            q_text = line
+            options = []
+            i += 1
+            while i < len(lines) and re.match(r'^[a-dA-D][\.\)]', lines[i]):
+                opt_val = re.sub(r'^[a-dA-D][\.\)]\s*', '', lines[i]).strip()
+                options.append(opt_val)
+                i += 1
+            if options:
+                questions.append({
+                    "type": "mcq",
+                    "question": q_text,
+                    "options": options,
+                    "answer": options[0]
+                })
+            continue
+        i += 1
+    return questions
+
 # --- STUDENT INTERFACE ---
 active_exam = load_exam_from_disk()
 
@@ -110,9 +176,8 @@ if active_exam and active_exam.get("questions"):
     
     st.subheader(f"📝 {q_title}")
     
-    # Step 1: Student Login / Verification
     if 'current_verified_student' not in st.session_state:
-        st.markdown("### 👤 بيانات الطالب للدخول للاختبار")
+        st.markdown("### 👤 تسجيل دخول الطالب")
         stu_name = st.text_input("اسم الطالب رباعي (Student Full Name):", key="gate_student_name")
         stu_phone = st.text_input("رقم تليفون الطالب أو ولي الأمر (Phone Number):", key="gate_student_phone")
         stu_grade = st.selectbox("الصف الدراسي (Grade):", [
@@ -142,7 +207,6 @@ if active_exam and active_exam.get("questions"):
                 norm_name = clean_text_for_grading(stu_name)
                 all_subs = load_submissions()
                 
-                # Check duplication by phone or name
                 if clean_phone_input in all_subs or norm_name in all_subs:
                     prev = all_subs.get(clean_phone_input, all_subs.get(norm_name))
                     st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بهذا الرقم/الاسم بتاريخ {prev['timestamp']}. لا يُسمح بإعادة الاختبار.")
@@ -165,7 +229,6 @@ if active_exam and active_exam.get("questions"):
                     st.session_state['current_verified_grade'] = stu_grade
                     st.rerun()
     else:
-        # Step 2: Display Exam Questions for Verified Student
         active_student = st.session_state['current_verified_student']
         active_phone = st.session_state['current_verified_phone']
         active_grade = st.session_state['current_verified_grade']
@@ -241,7 +304,6 @@ if active_exam and active_exam.get("questions"):
             st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
             breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
             
-            # Record submission permanently to block repeat
             record_submission(active_student, active_phone, active_grade, score, total, percentage)
             
             teacher_phone = "201090570624"
@@ -257,7 +319,7 @@ if active_exam and active_exam.get("questions"):
 else:
     st.info("👋 لا يوجد اختبار نشط حالياً. يرجى الانتظار حتى تقوم المعلمة بنشر الاختبار.")
 
-# --- HIDDEN TEACHER PORTAL (At the very bottom) ---
+# --- HIDDEN TEACHER PORTAL ---
 st.write("---")
 with st.expander("🔒 Admin Portal", expanded=False):
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
@@ -265,18 +327,29 @@ with st.expander("🔒 Admin Portal", expanded=False):
     if admin_pass == "admin":
         st.success("أهلاً بكِ مس خفة! هذه لوحة التحكم الخاصة بكِ فقط.")
         quiz_title = st.text_input("Quiz Title / Grade:", "Prep 1 - Assessment", key="exam_title_input")
-        api_key = st.text_input("Gemini API Key:", type="password", key="api_key_input")
+        api_key = st.text_input("Gemini API Key (مطلوب فقط عند رفع ملف):", type="password", key="api_key_input")
         
-        uploaded_file = st.file_uploader("Upload PDF or Image:", type=["pdf", "png", "jpg", "jpeg"])
-        raw_text = st.text_area("Or paste questions text here:", height=150)
+        uploaded_file = st.file_uploader("Upload PDF or Image (اختياري):", type=["pdf", "png", "jpg", "jpeg"])
+        raw_text = st.text_area("Or paste formatted questions text here (الأسرع والموصى به دائماً):", height=150)
         
         col_pub, col_rst = st.columns([2, 1])
         with col_pub:
             if st.button("🚀 Publish Exam to All Students"):
+                # Method 1: Instant Local Parsing (No 503 errors possible)
+                if raw_text.strip() and uploaded_file is None:
+                    parsed = parse_text_locally(raw_text)
+                    if parsed and len(parsed) > 0:
+                        save_exam_to_disk(quiz_title, parsed)
+                        st.success(f"🎉 تم استخراج {len(parsed)} سؤال ونشر الاختبار '{quiz_title}' لجميع الطلاب فوراً!")
+                        st.rerun()
+                    else:
+                        st.warning("جاري المعالجة المتقدمة عبر الذكاء الاصطناعي...")
+                
+                # Method 2: AI Parsing for Files or complex text
                 if not api_key:
-                    st.error("Please enter your Gemini API Key.")
+                    st.error("يرجى إدخال Gemini API Key.")
                 elif uploaded_file is None and not raw_text.strip():
-                    st.error("Please provide exam content (upload file or paste text).")
+                    st.error("يرجى إدخال نص الأسئلة أو رفع ملف.")
                 else:
                     with st.spinner("Processing questions & publishing..."):
                         client = genai.Client(api_key=api_key)
@@ -284,41 +357,42 @@ with st.expander("🔒 Admin Portal", expanded=False):
                         Strictly extract and convert the provided English exam questions into a JSON array.
                         DO NOT add any questions outside the provided material.
                         
-                        Return ONLY a raw JSON array like:
+                        Return ONLY a raw JSON array:
                         [
                           {"type": "mcq", "question": "...", "options": ["A", "B", "C", "D"], "answer": "A"},
-                          {"type": "fill_blank", "question": "...", "options": ["with", "for"], "answer": "with"},
+                          {"type": "fill_blank", "question": "...", "options": ["opt1", "opt2"], "answer": "opt1"},
                           {"type": "matching", "premise": "Item A", "options": ["Choice 1", "Choice 2"], "answer": "Choice 1"},
-                          {"type": "reorder", "question": "Rearrange the words:", "scrambled_words": ["play", "sports", "you", "Do"], "answer": "Do you play sports"}
+                          {"type": "reorder", "question": "Rearrange:", "scrambled_words": ["word1", "word2"], "answer": "word1 word2"}
                         ]
                         """
                         contents = [prompt]
-                        
                         if uploaded_file is not None:
                             bytes_data = uploaded_file.getvalue()
                             if uploaded_file.type == "application/pdf":
                                 contents.append(types.Part.from_bytes(data=bytes_data, mime_type="application/pdf"))
                             elif uploaded_file.type.startswith("image/"):
                                 contents.append(Image.open(uploaded_file))
-                        
                         if raw_text.strip():
                             contents.append(f"\n--- EXAM CONTENT ---\n{raw_text}")
                             
-                        try:
-                            res = client.models.generate_content(
-                                model="gemini-3.6-flash",
-                                contents=contents
-                            )
-                            if res and res.text:
-                                parsed = extract_json_safely(res.text)
-                                if parsed and len(parsed) > 0:
-                                    save_exam_to_disk(quiz_title, parsed)
-                                    st.success(f"🎉 تم نشر الاختبار '{quiz_title}' لجميع الطلاب بنجاح!")
-                                    st.rerun()
-                                else:
-                                    st.error("لم يتم العثور على أسئلة. يرجى لصق نص الأسئلة مباشرة.")
-                        except Exception as e:
-                            st.error(f"حدث خطأ أثناء معالجة الأسئلة: {e}")
+                        # Robust execution with automatic retries
+                        parsed = None
+                        for attempt in range(3):
+                            try:
+                                res = client.models.generate_content(model="gemini-3.6-flash", contents=contents)
+                                if res and res.text:
+                                    parsed = extract_json_safely(res.text)
+                                    if parsed:
+                                        break
+                            except Exception:
+                                time.sleep(2)
+                                
+                        if parsed and len(parsed) > 0:
+                            save_exam_to_disk(quiz_title, parsed)
+                            st.success(f"🎉 تم نشر الاختبار '{quiz_title}' لجميع الطلاب بنجاح!")
+                            st.rerun()
+                        else:
+                            st.error("السيرفر مشغول حالياً. يمكنك لصق نص الأسئلة مباشرة في المربع والضغط على نشر ليتم التحويل فورياً دون انتظار!")
 
         with col_rst:
             if st.button("🔄 Reset All Student Submissions"):
@@ -326,10 +400,33 @@ with st.expander("🔒 Admin Portal", expanded=False):
                     os.remove(SUBMISSIONS_FILE)
                 st.info("تم تصفير سجل الطلاب؛ يمكنهم الحل مجدداً.")
 
+        # --- Submissions & Excel Export Section ---
         subs = load_submissions()
         if subs:
-            st.write(f"📊 **سجل الطلاب الذين أتموا الاختبار ({len(subs)} طالب):**")
+            st.write("---")
+            st.markdown(f"### 📊 كشف درجات الطلاب المكتملة ({len(subs)} طالب)")
+            
+            df_data = []
             for _, s_data in subs.items():
-                st.write(f"👤 **{s_data['full_name']}** ({s_data.get('grade','')}) | هاتف: `{s_data.get('phone','')}` | الدرجة: **{s_data['score']}/{s_data['total']}** ({s_data['percentage']}%) | 🕒 {s_data['timestamp']}")
+                df_data.append({
+                    "اسم الطالب": s_data.get('full_name', ''),
+                    "الصف الدراسي": s_data.get('grade', ''),
+                    "رقم الهاتف": s_data.get('phone', ''),
+                    "الدرجة": s_data.get('score', 0),
+                    "المجموع": s_data.get('total', 0),
+                    "النسبة": f"{s_data.get('percentage', 0)}%",
+                    "وقت التسليم": s_data.get('timestamp', '')
+                })
+            df = pd.DataFrame(df_data)
+            st.dataframe(df, use_container_width=True)
+            
+            # Excel / CSV Download Button
+            csv_data = df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 تحميل كشف الدرجات (Excel / CSV)",
+                data=csv_data,
+                file_name=f"Grades_{quiz_title}_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
     elif admin_pass:
         st.error("Incorrect password!")
