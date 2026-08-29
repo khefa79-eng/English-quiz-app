@@ -24,9 +24,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 QUIZ_FILE = "active_quiz.json"
-TEACHER_PASSWORD = "admin"  # كلمة سر لوحة تحكم المعلمة
+TEACHER_PASSWORD = "admin"  # كلمة سر لوحة المعلمة
 
-# Helper Functions to save and load quiz
 def save_quiz_data(data, title):
     payload = {
         "title": title,
@@ -50,7 +49,7 @@ def normalize_reorder(text):
     cleaned = re.sub(r'[^\w\s]', '', text.lower())
     return " ".join(cleaned.split())
 
-# Sidebar Navigation (Teacher vs Student)
+# Sidebar Navigation
 st.sidebar.title("Navigation")
 app_mode = st.sidebar.radio("Go to:", ["Student Area (الامتحان)", "Teacher Dashboard (لوحة المعلمة)"])
 
@@ -62,13 +61,13 @@ if app_mode == "Teacher Dashboard (لوحة المعلمة)":
     pwd = st.text_input("Enter Teacher Password:", type="password")
     
     if pwd == TEACHER_PASSWORD:
-        st.success("Welcome, Mrs. Kheffa! You can now create and publish a new quiz.")
+        st.success("Welcome, Mrs. Kheffa! You can now publish your exact quiz.")
         
-        quiz_title = st.text_input("New Quiz Title / Grade:", "Connect 5 - Unit Assessment")
+        quiz_title = st.text_input("Quiz Title / Grade:", "Prep 2 - Unit Assessment")
         api_key = st.text_input("Gemini API Key:", type="password")
         
         uploaded_file = st.file_uploader("Upload PDF or Image (Exam / Worksheet):", type=["pdf", "png", "jpg", "jpeg"])
-        raw_text = st.text_area("Or paste questions text here:")
+        raw_text = st.text_area("Or paste questions text here:", height=180)
         
         extracted_content = ""
         image_to_send = None
@@ -84,38 +83,47 @@ if app_mode == "Teacher Dashboard (لوحة المعلمة)":
         if raw_text:
             extracted_content += "\n" + raw_text
             
-        if st.button("🚀 Publish Quiz for Students"):
+        if st.button("🚀 Publish Exact Quiz for Students"):
             if not api_key:
                 st.error("Please enter your Gemini API key.")
             elif not extracted_content and image_to_send is None:
-                st.error("Please provide exam content (file or text).")
+                st.error("Please provide exam content (upload a file or paste text).")
             else:
-                with st.spinner("Creating and publishing exam..."):
+                with st.spinner("Processing your exact questions..."):
                     client = genai.Client(api_key=api_key)
                     prompt = """
-                    You are an expert English language test creator for Egyptian curricula.
-                    Extract or generate exam questions covering varied formats:
-                    1. "mcq" (Multiple Choice)
-                    2. "fill_blank" (Fill in missing words)
-                    3. "reorder" (Sentence rearranging)
-                    4. "matching" (Match Column A with B)
-                    5. "reading" (Passage followed by MCQs)
+                    CRITICAL INSTRUCTION:
+                    You are a strict exam transcriber and parser.
+                    DO NOT invent, generate, hallucinate, or add any new questions of your own.
+                    You MUST strictly extract and use ONLY the exact questions provided in the user input / file / image.
 
-                    Return ONLY a valid JSON array of question objects without markdown blocks.
-                    Structure:
+                    Your task:
+                    1. Read the provided text/image carefully.
+                    2. Convert EVERY question from the teacher's input into the appropriate interactive format.
+                    3. Determine the 100% correct model answer for each question.
+
+                    Supported question formats:
+                    - "mcq": For multiple choice questions. Keep original choices.
+                    - "fill_blank": For sentences with blanks (e.g. using a word bank). Include the word bank options in "options".
+                    - "reorder": For scrambled words that need rearranging.
+                    - "matching": For Column A & Column B matching.
+                    - "reading": For reading comprehension passages followed by their questions.
+
+                    Return ONLY a valid JSON array of objects. No markdown formatting, no explanations.
+                    Example JSON structure:
                     [
-                      {"type": "mcq", "question": "...", "options": ["A", "B", "C", "D"], "answer": "A"},
-                      {"type": "fill_blank", "question": "...", "options": ["w1", "w2"], "answer": "w1"},
-                      {"type": "reorder", "question": "...", "answer": "..."},
-                      {"type": "matching", "premise": "...", "options": ["..."], "answer": "..."},
-                      {"type": "reading", "passage": "...", "question": "...", "options": ["..."], "answer": "..."}
+                      {"type": "mcq", "question": "Exact question text", "options": ["Option 1", "Option 2", "Option 3", "Option 4"], "answer": "Exact correct option"},
+                      {"type": "fill_blank", "question": "The public garden is very popular ..... teenagers.", "options": ["with", "for", "at"], "answer": "with"},
+                      {"type": "reorder", "question": "sports / play / you / Do / ?", "answer": "Do you play sports?"},
+                      {"type": "matching", "premise": "Item from Column A", "options": ["Choice 1", "Choice 2"], "answer": "Choice 1"},
+                      {"type": "reading", "passage": "Full passage text...", "question": "Question about passage", "options": ["A", "B", "C"], "answer": "A"}
                     ]
                     """
                     contents = [prompt]
                     if image_to_send:
                         contents.append(image_to_send)
                     if extracted_content:
-                        contents.append(extracted_content)
+                        contents.append(f"\n--- TEACHER'S EXACT EXAM CONTENT ---\n{extracted_content}")
                         
                     try:
                         response = client.models.generate_content(
@@ -125,7 +133,7 @@ if app_mode == "Teacher Dashboard (لوحة المعلمة)":
                         clean_json = response.text.replace("```json", "").replace("```", "").strip()
                         quiz_json = json.loads(clean_json)
                         save_quiz_data(quiz_json, quiz_title)
-                        st.success(f"🎉 Quiz '{quiz_title}' has been PUBLISHED successfully! Students can now take it.")
+                        st.success(f"🎉 Quiz '{quiz_title}' with YOUR EXACT questions has been published successfully!")
                     except Exception as e:
                         st.error(f"Error publishing quiz: {e}")
     elif pwd:
@@ -200,7 +208,7 @@ else:
                         st.session_state['final_student_name'] = student_name
                         st.rerun()
 
-        # Detailed Grading and WhatsApp Button
+        # Results & Model Answers
         if st.session_state.get('submitted', False):
             st.write("---")
             st.subheader("📋 Results & Model Answers")
