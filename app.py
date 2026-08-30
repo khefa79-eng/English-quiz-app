@@ -3,7 +3,6 @@ import json
 import os
 import string
 import re
-import random
 import urllib.parse
 from datetime import datetime
 import pandas as pd
@@ -14,7 +13,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# Custom Styling
 st.markdown("""
     <style>
     .main-title-box {
@@ -64,18 +62,39 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-EXAM_STORAGE_FILE = "current_exam.json"
+EXAM_BANK_FILE = "exam_bank.json"
+ACTIVE_CONFIG_FILE = "active_config.json"
 SUBMISSIONS_FILE = "submitted_students.json"
 
-def save_exam_to_disk(title, questions):
-    data = {"title": title, "questions": questions}
-    with open(EXAM_STORAGE_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+GRADES_LIST = [
+    "Primary 1 (أولى ابتدائي)", "Primary 2 (تانية ابتدائي)", "Primary 3 (تالتة ابتدائي)",
+    "Primary 4 (رابعة ابتدائي)", "Primary 5 (خامسة ابتدائي)", "Primary 6 (سادسة ابتدائي)",
+    "Prep 1 (أولى إعدادي)", "Prep 2 (تانية إعدادي)", "Prep 3 (تالتة إعدادي)",
+    "Secondary 1 (أولى ثانوي)", "Secondary 2 (تانية ثانوي)", "Secondary 3 (تالتة ثانوي)"
+]
 
-def load_exam_from_disk():
-    if os.path.exists(EXAM_STORAGE_FILE):
+def load_exam_bank():
+    if os.path.exists(EXAM_BANK_FILE):
         try:
-            with open(EXAM_STORAGE_FILE, "r", encoding="utf-8") as f:
+            with open(EXAM_BANK_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_exam_bank(bank):
+    with open(EXAM_BANK_FILE, "w", encoding="utf-8") as f:
+        json.dump(bank, f, ensure_ascii=False, indent=2)
+
+def set_active_exam(grade, exam_id):
+    config = {"active_grade": grade, "active_id": exam_id}
+    with open(ACTIVE_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+
+def get_active_exam_info():
+    if os.path.exists(ACTIVE_CONFIG_FILE):
+        try:
+            with open(ACTIVE_CONFIG_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return None
@@ -97,11 +116,12 @@ def clean_text_for_grading(text):
     text = text.lower()
     return " ".join(text.split())
 
-def record_submission(student_name, student_phone, student_grade, score, total, percentage):
+def record_submission(exam_key, student_name, student_phone, student_grade, score, total, percentage):
     submissions = load_submissions()
     clean_phone = re.sub(r'\D', '', student_phone)
-    key_id = clean_phone if clean_phone else clean_text_for_grading(student_name)
-    submissions[key_id] = {
+    record_id = f"{exam_key}_{clean_phone}" if clean_phone else f"{exam_key}_{clean_text_for_grading(student_name)}"
+    submissions[record_id] = {
+        "exam_key": exam_key,
         "full_name": student_name.strip(),
         "phone": student_phone.strip(),
         "grade": student_grade.strip(),
@@ -143,7 +163,6 @@ def parse_text_locally(text):
     while i < len(lines):
         line = lines[i]
         
-        # 1. Passage Section
         if re.match(r'(?i)^passage\s*:\s*', line):
             current_passage = re.sub(r'(?i)^passage\s*:\s*', '', line).strip()
             i += 1
@@ -152,14 +171,12 @@ def parse_text_locally(text):
                 i += 1
             continue
 
-        # 2. Word Box for Fill in the Blanks
         if re.match(r'(?i)^box\s*:\s*', line):
             raw_box = re.sub(r'(?i)^box\s*:\s*', '', line).strip('[] ')
             current_box_words = [w.strip().strip('"\'') for w in raw_box.split(',') if w.strip()]
             i += 1
             continue
 
-        # 3. Matching
         if re.search(r'(?i)match\s*:', line):
             premise = re.sub(r'(?i)^\d+[\.\-]?\s*match\s*:\s*', '', line).strip()
             options, answer = [], ""
@@ -180,7 +197,6 @@ def parse_text_locally(text):
                 })
             continue
 
-        # 4. Reorder (With Scramble Protection)
         elif re.search(r'(?i)words\s*:', line):
             words_raw = re.search(r'\[(.*?)\]', line)
             words = [w.strip().strip('"\'') for w in words_raw.group(1).split(',')] if words_raw else []
@@ -190,20 +206,14 @@ def parse_text_locally(text):
                 answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
                 i += 1
             if words:
-                correct_ans = answer if answer else " ".join(words)
-                # Shuffle words if given in correct order so the student has to reorder
-                shuffled_words = list(words)
-                if len(shuffled_words) > 1 and " ".join(shuffled_words).lower() == correct_ans.lower():
-                    random.shuffle(shuffled_words)
                 questions.append({
                     "type": "reorder",
                     "question": "Rearrange the words to make a correct sentence:",
-                    "scrambled_words": shuffled_words,
-                    "answer": correct_ans
+                    "scrambled_words": words,
+                    "answer": answer if answer else " ".join(words)
                 })
             continue
 
-        # 5. Standard Questions (MCQ, Passage MCQ, Fill from Box)
         elif re.match(r'^\d+[\.\-]', line):
             q_text = line
             options = []
@@ -247,26 +257,42 @@ def parse_text_locally(text):
         i += 1
     return questions
 
-# --- STUDENT INTERFACE ---
-active_exam = load_exam_from_disk()
+# --- IDENTIFY ACTIVE EXAM FOR THE STUDENT ---
+query_params = st.query_params
+active_config = get_active_exam_info()
+exam_bank = load_exam_bank()
 
+# Support Direct Grade via URL or Active Config
+selected_grade_param = query_params.get("grade", None)
+active_exam = None
+active_exam_key = ""
+
+if selected_grade_param:
+    matched_grades = [g for g in GRADES_LIST if selected_grade_param.lower() in g.lower()]
+    if matched_grades and matched_grades[0] in exam_bank and len(exam_bank[matched_grades[0]]) > 0:
+        latest_id = list(exam_bank[matched_grades[0]].keys())[-1]
+        active_exam = exam_bank[matched_grades[0]][latest_id]
+        active_exam_key = f"{matched_grades[0]}_{latest_id}"
+elif active_config:
+    g = active_config.get("active_grade")
+    eid = active_config.get("active_id")
+    if g in exam_bank and eid in exam_bank[g]:
+        active_exam = exam_bank[g][eid]
+        active_exam_key = f"{g}_{eid}"
+
+# --- STUDENT INTERFACE ---
 if active_exam and active_exam.get("questions"):
     questions = active_exam["questions"]
     q_title = active_exam.get("title", "English Assessment")
+    target_grade = active_exam.get("grade", "All Grades")
     
-    st.subheader(f"📝 {q_title}")
+    st.markdown(f"### 📝 {q_title}")
+    st.caption(f"📌 الصف الدراسي: **{target_grade}**")
     
     if 'current_verified_student' not in st.session_state:
-        st.markdown("### 👤 تسجيل دخول الطالب")
+        st.markdown("#### 👤 تسجيل دخول الطالب")
         stu_name = st.text_input("اسم الطالب رباعي (Student Full Name):", key="gate_student_name")
         stu_phone = st.text_input("رقم تليفون الطالب أو ولي الأمر (Phone Number):", key="gate_student_phone")
-        stu_grade = st.selectbox("الصف الدراسي (Grade):", [
-            "-- اختر الصف الدراسي --",
-            "Primary 1 (أولى ابتدائي)", "Primary 2 (تانية ابتدائي)", "Primary 3 (تالتة ابتدائي)",
-            "Primary 4 (رابعة ابتدائي)", "Primary 5 (خامسة ابتدائي)", "Primary 6 (سادسة ابتدائي)",
-            "Prep 1 (أولى إعدادي)", "Prep 2 (تانية إعدادي)", "Prep 3 (تالتة إعدادي)",
-            "Secondary 1 (أولى ثانوي)", "Secondary 2 (تانية ثانوي)", "Secondary 3 (تالتة ثانوي)"
-        ], key="gate_student_grade")
         
         start_btn = st.button("🚀 بدء الاختبار (Start Exam)")
         
@@ -276,19 +302,20 @@ if active_exam and active_exam.get("questions"):
                 st.error("يرجى كتابة الاسم رباعي للمتابعة!")
             elif not clean_phone_input or len(clean_phone_input) < 10:
                 st.error("يرجى كتابة رقم هاتف صحيح مكون من 11 رقماً!")
-            elif stu_grade == "-- اختر الصف الدراسي --":
-                st.error("يرجى اختيار الصف الدراسي!")
             else:
                 norm_name = clean_text_for_grading(stu_name)
                 all_subs = load_submissions()
                 
-                if clean_phone_input in all_subs or norm_name in all_subs:
-                    prev = all_subs.get(clean_phone_input, all_subs.get(norm_name))
+                check_phone_key = f"{active_exam_key}_{clean_phone_input}"
+                check_name_key = f"{active_exam_key}_{norm_name}"
+                
+                if check_phone_key in all_subs or check_name_key in all_subs:
+                    prev = all_subs.get(check_phone_key, all_subs.get(check_name_key))
                     st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بهذا الرقم/الاسم بتاريخ {prev['timestamp']}. لا يُسمح بإعادة الاختبار.")
                     st.info(f"🏆 **درجتك المسجلة:** {prev['score']} / {prev['total']} ({prev['percentage']}%)")
                     
                     teacher_phone = "201090570624"
-                    wa_msg = f"السلام عليكم مس خفـة الاتربي ، أنا الطالب(ة): {prev['full_name']}\nالصف: {prev.get('grade','')}\nلقد انتهيت من حل اختبار: {q_title}\nدرجتي: {prev['score']} من {prev['total']} ({prev['percentage']}%)."
+                    wa_msg = f"*Exam:* {q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {prev['full_name']}\n*Grade:* {target_grade}\n*Phone:* {prev.get('phone', '')}\n*Recorded Score:* {prev['score']}/{prev['total']} ({prev['percentage']}%)"
                     whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(wa_msg)}"
                     
                     st.markdown(f"""
@@ -301,15 +328,15 @@ if active_exam and active_exam.get("questions"):
                 else:
                     st.session_state['current_verified_student'] = stu_name.strip()
                     st.session_state['current_verified_phone'] = clean_phone_input
-                    st.session_state['current_verified_grade'] = stu_grade
+                    st.session_state['current_target_grade'] = target_grade
                     st.rerun()
     else:
         active_student = st.session_state['current_verified_student']
         active_phone = st.session_state['current_verified_phone']
-        active_grade = st.session_state['current_verified_grade']
+        grade_display = st.session_state.get('current_target_grade', target_grade)
         
         if not st.session_state.get('exam_submitted', False):
-            st.info(f"مرحباً بك يا **{active_student}** ({active_grade})! أجب عن جميع الأسئلة ثم اضغط Submit Exam.")
+            st.info(f"مرحباً بك يا **{active_student}** ({grade_display})! أجب عن جميع الأسئلة ثم اضغط Submit Exam.")
             
             with st.form("interactive_exam_form"):
                 user_answers = {}
@@ -320,7 +347,6 @@ if active_exam and active_exam.get("questions"):
                     q_type = q.get('type', 'mcq')
                     st.markdown(f"**Question {idx + 1} (1 Mark)**")
                     
-                    # Reading Passage Display with Audio Player
                     if q_type == "reading" and "passage" in q:
                         pass_text = q['passage']
                         if pass_text not in displayed_passages:
@@ -333,7 +359,6 @@ if active_exam and active_exam.get("questions"):
                             render_speech_player(pass_text)
                             displayed_passages.add(pass_text)
 
-                    # Word Box for Read & Complete
                     if q_type == "box_complete":
                         box_words = q.get('box_words', [])
                         box_key = ",".join(box_words)
@@ -346,7 +371,6 @@ if active_exam and active_exam.get("questions"):
                             """, unsafe_allow_html=True)
                             displayed_boxes.add(box_key)
                     
-                    # Controls
                     if q_type in ["mcq", "reading"]:
                         st.write(q.get('question', ''))
                         user_answers[idx] = st.radio("Choose correct answer:", options=q.get('options', []), key=f"ans_mcq_{idx}", index=None)
@@ -373,12 +397,14 @@ if active_exam and active_exam.get("questions"):
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
-        # Results & Model Answers (On-screen Model Answers for Student)
+        # Results View
         if st.session_state.get('exam_submitted', False):
             st.subheader("📋 Results & Model Answers")
             score = 0
             total = len(questions)
             user_answers = st.session_state.get('submitted_answers', {})
+            
+            breakdown_text = f"*Exam:* {q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {active_student}\n*Grade:* {grade_display}\n*Phone:* {active_phone}\n"
             
             for idx, q in enumerate(questions):
                 q_type = q.get('type', 'mcq')
@@ -396,86 +422,114 @@ if active_exam and active_exam.get("questions"):
                 if is_correct:
                     score += 1
                     st.success(f"**Q{idx + 1}: Correct ✅** (Your answer: {ans})")
+                    breakdown_text += f"Q{idx+1}: Correct ✅\n"
                 else:
                     st.error(f"**Q{idx + 1}: Incorrect ❌** | Your answer: {ans or 'None'} | **Model Answer:** {correct}")
+                    breakdown_text += f"Q{idx+1}: Incorrect ❌ (Ans: {ans or 'None'} | Correct: {correct})\n"
                     
             percentage = round((score / total) * 100, 1)
             st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
+            breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
             
-            # Record submission to disk
-            record_submission(active_student, active_phone, active_grade, score, total, percentage)
-            
-            # Short & Elegant WhatsApp Message for the Teacher
-            clean_wa_text = f"السلام عليكم مس خفـة الاتربي ، أنا الطالب(ة): {active_student}\nالصف: {active_grade} | هاتف: {active_phone}\nلقد انتهيت من حل اختبار: {q_title}\nدرجتي: {score} من {total} ({percentage}%)."
+            record_submission(active_exam_key, active_student, active_phone, grade_display, score, total, percentage)
             
             teacher_phone = "201090570624"
-            whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(clean_wa_text)}"
+            whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(breakdown_text)}"
             
             st.markdown(f"""
                 <div style="text-align: center; margin-top: 25px;">
                     <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 28px; text-decoration: none; font-size: 17px; font-weight: bold; border-radius: 8px; display: inline-block;">
-                        📲 إرسال النتيجة إلى مس خفة على الواتساب
+                        📲 Send Result to Mrs. Kheffa on WhatsApp
                     </a>
                 </div>
             """, unsafe_allow_html=True)
 else:
-    st.info("👋 لا يوجد اختبار نشط حالياً. يرجى الانتظار حتى تقوم المعلمة بنشر الاختبار.")
+    st.info("👋 لا يوجد اختبار نشط حالياً لهذا الصف. يرجى الانتظار حتى تقوم المعلمة بنشر الاختبار.")
 
-# --- HIDDEN TEACHER PORTAL ---
+# --- HIDDEN TEACHER PORTAL & ARCHIVE MANAGER ---
 st.write("---")
-with st.expander("🔒 Admin Portal", expanded=False):
+with st.expander("🔒 Admin Portal & Exam Bank", expanded=False):
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! هذه لوحة التحكم الخاصة بكِ.")
-        quiz_title = st.text_input("Quiz Title / Grade:", "Prep 1 - Assessment", key="exam_title_input")
-        raw_text = st.text_area("Paste formatted questions text here:", height=220)
+        st.success("أهلاً بكِ مس خفة! لوحة إدارة وتخزين بنك الاختبارات.")
         
-        col_pub, col_rst = st.columns([2, 1])
-        with col_pub:
-            if st.button("🚀 Publish Exam to All Students"):
+        tab_new, tab_bank, tab_reports = st.tabs(["➕ إضافة اختبار جديد", "📚 بنك الاختبارات والأرشيف", "📊 التقارير والإكسيل"])
+        
+        with tab_new:
+            sel_grade = st.selectbox("اختر الصف الدراسي للاختبار:", GRADES_LIST, key="new_exam_grade")
+            quiz_title = st.text_input("Quiz Title (عنوان الاختبار):", f"{sel_grade.split(' ')[0]} - Assessment 1", key="exam_title_input")
+            raw_text = st.text_area("Paste formatted questions text here:", height=200, key="new_raw_text")
+            
+            if st.button("💾 حفظ ونشر الاختبار فوراً"):
                 if raw_text.strip():
                     parsed = parse_text_locally(raw_text)
                     if parsed and len(parsed) > 0:
-                        save_exam_to_disk(quiz_title, parsed)
-                        st.success(f"🎉 تم استخراج {len(parsed)} سؤال ونشر الاختبار '{quiz_title}' لجميع الطلاب فوراً!")
+                        bank = load_exam_bank()
+                        if sel_grade not in bank:
+                            bank[sel_grade] = {}
+                        
+                        exam_id = f"exam_{int(datetime.now().timestamp())}"
+                        bank[sel_grade][exam_id] = {
+                            "title": quiz_title,
+                            "grade": sel_grade,
+                            "questions": parsed,
+                            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        }
+                        save_exam_bank(bank)
+                        set_active_exam(sel_grade, exam_id)
+                        st.success(f"🎉 تم حفظ ونشر '{quiz_title}' في بنك أسئلة {sel_grade} بنجاح!")
                         st.rerun()
                     else:
                         st.error("يرجى التأكد من كتابة الأسئلة بالتنسيق المطلوب.")
                 else:
-                    st.error("يرجى لصق نص الأسئلة أولاً.")
+                    st.error("يرجى لصق نص الأسئلة.")
 
-        with col_rst:
-            if st.button("🔄 Reset All Student Submissions"):
-                if os.path.exists(SUBMISSIONS_FILE):
-                    os.remove(SUBMISSIONS_FILE)
-                st.info("تم تصفير سجل الطلاب؛ يمكنهم الحل مجدداً.")
+        with tab_bank:
+            bank = load_exam_bank()
+            if bank:
+                for gr_name, exams_dict in bank.items():
+                    st.markdown(f"#### 📁 {gr_name} ({len(exams_dict)} اختبارات محفوظة)")
+                    for e_id, e_info in list(exams_dict.items()):
+                        c1, c2, c3 = st.columns([3, 1, 1])
+                        c1.write(f"📝 **{e_info['title']}** ({len(e_info['questions'])} أسئلة) - {e_info.get('created_at','')}")
+                        if c2.button("🚀 تفعيل الآن", key=f"act_{e_id}"):
+                            set_active_exam(gr_name, e_id)
+                            st.success(f"تم تفعيل {e_info['title']} ليكون الاختبار النشط!")
+                            st.rerun()
+                        if c3.button("🗑️ حذف", key=f"del_{e_id}"):
+                            del bank[gr_name][e_id]
+                            save_exam_bank(bank)
+                            st.rerun()
+                    st.write("---")
+            else:
+                st.info("لا توجد اختبارات محفوظة في البنك بعد.")
 
-        subs = load_submissions()
-        if subs:
-            st.write("---")
-            st.markdown(f"### 📊 كشف درجات الطلاب المكتملة ({len(subs)} طالب)")
-            
-            df_data = []
-            for _, s_data in subs.items():
-                df_data.append({
-                    "اسم الطالب": s_data.get('full_name', ''),
-                    "الصف الدراسي": s_data.get('grade', ''),
-                    "رقم الهاتف": s_data.get('phone', ''),
-                    "الدرجة": s_data.get('score', 0),
-                    "المجموع": s_data.get('total', 0),
-                    "النسبة": f"{s_data.get('percentage', 0)}%",
-                    "وقت التسليم": s_data.get('timestamp', '')
-                })
-            df = pd.DataFrame(df_data)
-            st.dataframe(df, use_container_width=True)
-            
-            csv_data = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="📥 تحميل كشف الدرجات (Excel / CSV)",
-                data=csv_data,
-                file_name=f"Grades_{quiz_title}_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
+        with tab_reports:
+            subs = load_submissions()
+            if subs:
+                df_data = []
+                for _, s_data in subs.items():
+                    df_data.append({
+                        "اسم الطالب": s_data.get('full_name', ''),
+                        "الصف الدراسي": s_data.get('grade', ''),
+                        "رقم الهاتف": s_data.get('phone', ''),
+                        "الدرجة": s_data.get('score', 0),
+                        "المجموع": s_data.get('total', 0),
+                        "النسبة": f"{s_data.get('percentage', 0)}%",
+                        "وقت التسليم": s_data.get('timestamp', '')
+                    })
+                df = pd.DataFrame(df_data)
+                st.dataframe(df, use_container_width=True)
+                
+                csv_data = df.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="📥 تحميل كشف الدرجات الكامل (Excel / CSV)",
+                    data=csv_data,
+                    file_name=f"All_Grades_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.info("لا توجد نتائج مسجلة حتى الآن.")
     elif admin_pass:
         st.error("Incorrect password!")
