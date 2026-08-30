@@ -13,7 +13,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# Responsive Custom Styling
+# Custom Responsive Styling
 st.markdown("""
     <style>
     .main-title-box {
@@ -37,6 +37,17 @@ st.markdown("""
         font-size: 1.05rem;
         line-height: 1.6;
         color: #1E293B;
+    }
+    .word-box-header {
+        background-color: #EEF2FF;
+        border: 2px dashed #6366F1;
+        padding: 12px;
+        border-radius: 10px;
+        margin: 12px 0 18px 0;
+        text-align: center;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #312E81;
     }
     .stRadio label, .stSelectbox label, .stTextInput label { font-size: 1.05rem !important; font-weight: 600 !important; }
     .stButton>button { width: 100%; border-radius: 10px; height: 3em; font-weight: bold; font-size: 1.05rem; }
@@ -130,16 +141,16 @@ def parse_text_locally(text):
     while i < len(lines):
         line = lines[i]
         
-        # 1. Passage Handler
+        # 1. Passage Section
         if re.match(r'(?i)^passage\s*:\s*', line):
             current_passage = re.sub(r'(?i)^passage\s*:\s*', '', line).strip()
             i += 1
-            while i < len(lines) and not re.match(r'^\d+[\.\-]', lines[i]) and not re.search(r'(?i)^(match|words|box|complete)\s*:', lines[i]):
+            while i < len(lines) and not re.match(r'^\d+[\.\-]', lines[i]) and not re.search(r'(?i)^(match|words|box)\s*:', lines[i]):
                 current_passage += " " + lines[i]
                 i += 1
             continue
 
-        # 2. Read and Complete Box
+        # 2. Word Box for Fill in the Blanks / Read & Complete
         if re.match(r'(?i)^box\s*:\s*', line):
             raw_box = re.sub(r'(?i)^box\s*:\s*', '', line).strip('[] ')
             current_box_words = [w.strip().strip('"\'') for w in raw_box.split(',') if w.strip()]
@@ -185,7 +196,7 @@ def parse_text_locally(text):
                 })
             continue
 
-        # 5. Standard Questions (MCQ / Correct the Mistake / Fill in blanks / Read & Answer)
+        # 5. Standard Questions (MCQ, Fill in blanks with box, Reading Questions)
         elif re.match(r'^\d+[\.\-]', line):
             q_text = line
             options = []
@@ -203,9 +214,13 @@ def parse_text_locally(text):
                 i += 1
 
             if current_box_words and not options:
-                options = current_box_words
-
-            if options:
+                questions.append({
+                    "type": "box_complete",
+                    "question": q_text,
+                    "box_words": current_box_words,
+                    "answer": answer
+                })
+            elif options:
                 q_obj = {
                     "type": "reading" if current_passage else "mcq",
                     "question": q_text,
@@ -262,7 +277,7 @@ if active_exam and active_exam.get("questions"):
                 
                 if clean_phone_input in all_subs or norm_name in all_subs:
                     prev = all_subs.get(clean_phone_input, all_subs.get(norm_name))
-                    st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بتاريخ {prev['timestamp']}. لا يُسمح بإعادة الاختبار.")
+                    st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بهذا الرقم/الاسم بتاريخ {prev['timestamp']}. لا يُسمح بإعادة الاختبار.")
                     st.info(f"🏆 **درجتك المسجلة:** {prev['score']} / {prev['total']} ({prev['percentage']}%)")
                     
                     teacher_phone = "201090570624"
@@ -292,11 +307,13 @@ if active_exam and active_exam.get("questions"):
             with st.form("interactive_exam_form"):
                 user_answers = {}
                 displayed_passages = set()
+                displayed_boxes = set()
                 
                 for idx, q in enumerate(questions):
                     q_type = q.get('type', 'mcq')
                     st.markdown(f"**Question {idx + 1} (1 Mark)**")
                     
+                    # Reading Passage Display
                     if q_type == "reading" and "passage" in q:
                         pass_text = q['passage']
                         if pass_text not in displayed_passages:
@@ -308,21 +325,35 @@ if active_exam and active_exam.get("questions"):
                             """, unsafe_allow_html=True)
                             render_speech_player(pass_text)
                             displayed_passages.add(pass_text)
+
+                    # Word Box for Read & Complete
+                    if q_type == "box_complete":
+                        box_words = q.get('box_words', [])
+                        box_key = ",".join(box_words)
+                        if box_key not in displayed_boxes:
+                            st.markdown(f"""
+                            <div class="word-box-header">
+                                📦 Complete from words in the box:<br>
+                                [ {' — '.join(box_words)} ]
+                            </div>
+                            """, unsafe_allow_html=True)
+                            displayed_boxes.add(box_key)
                     
+                    # Render Controls
                     if q_type in ["mcq", "reading"]:
                         st.write(q.get('question', ''))
-                        user_answers[idx] = st.radio("Choose correct answer / اختر الإجابة الصحيحة:", options=q.get('options', []), key=f"ans_mcq_{idx}", index=None)
+                        user_answers[idx] = st.radio("Choose correct answer:", options=q.get('options', []), key=f"ans_mcq_{idx}", index=None)
+                    elif q_type == "box_complete":
+                        st.write(q.get('question', ''))
+                        user_answers[idx] = st.selectbox("Select word / اختر الكلمة:", options=["-- Select Word --"] + q.get('box_words', []), key=f"ans_box_{idx}")
                     elif q_type == "matching":
                         st.write(f"🔹 Match: **{q.get('premise', '')}**")
                         user_answers[idx] = st.selectbox("Select match:", options=["-- Select Match --"] + q.get('options', []), key=f"ans_match_{idx}")
                     elif q_type == "reorder":
                         st.write(q.get('question', 'Rearrange the following words:'))
                         words_list = q.get('scrambled_words', [])
-                        if words_list:
-                            selected_words = st.multiselect("Select words in order:", options=words_list, key=f"ans_reorder_{idx}")
-                            user_answers[idx] = " ".join(selected_words)
-                        else:
-                            user_answers[idx] = st.text_input("Write sentence in correct order:", key=f"ans_txt_reorder_{idx}")
+                        selected_words = st.multiselect("Tap words in correct order (اضغط على الكلمات بالترتيب):", options=words_list, key=f"ans_reorder_{idx}")
+                        user_answers[idx] = " ".join(selected_words)
                     elif q_type == "fill_text":
                         st.write(q.get('question', ''))
                         user_answers[idx] = st.text_input("Write your answer:", key=f"ans_filltxt_{idx}")
@@ -335,7 +366,7 @@ if active_exam and active_exam.get("questions"):
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
-        # Results
+        # Results & Model Answers
         if st.session_state.get('exam_submitted', False):
             st.subheader("📋 Results & Model Answers")
             score = 0
@@ -350,8 +381,8 @@ if active_exam and active_exam.get("questions"):
                 correct = q.get('answer', '')
                 is_correct = False
                 
-                if q_type in ["reorder", "fill_text"]:
-                    if clean_text_for_grading(str(ans)) == clean_text_for_grading(str(correct)) and ans:
+                if q_type in ["reorder", "fill_text", "box_complete"]:
+                    if clean_text_for_grading(str(ans)) == clean_text_for_grading(str(correct)) and ans not in ["-- Select Word --", ""]:
                         is_correct = True
                 else:
                     if str(ans).strip() == str(correct).strip() and ans not in ["-- Select Match --", None, ""]:
