@@ -3,6 +3,7 @@ import json
 import os
 import string
 import re
+import random
 import urllib.parse
 from datetime import datetime
 import pandas as pd
@@ -13,7 +14,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# Custom Responsive Styling
+# Custom Styling
 st.markdown("""
     <style>
     .main-title-box {
@@ -31,12 +32,13 @@ st.markdown("""
     .passage-box {
         background-color: #F8FAFC;
         border-left: 5px solid #3B82F6;
-        padding: 16px;
+        padding: 18px;
         border-radius: 8px;
         margin-bottom: 18px;
         font-size: 1.05rem;
-        line-height: 1.6;
+        line-height: 1.7;
         color: #1E293B;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04);
     }
     .word-box-header {
         background-color: #EEF2FF;
@@ -115,7 +117,7 @@ def render_speech_player(text_to_read):
     clean_js_text = text_to_read.replace("'", "\\'").replace('"', '\\"').replace("\n", " ")
     audio_html = f"""
     <div style="margin: 12px 0;">
-        <button onclick="speakPassage()" style="background-color: #4F46E5; color: white; border: none; padding: 9px 18px; border-radius: 8px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+        <button onclick="speakPassage()" style="background-color: #4F46E5; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
             🔊 Listen to Passage (استمع للنص الصوتي)
         </button>
         <script>
@@ -129,7 +131,7 @@ def render_speech_player(text_to_read):
         </script>
     </div>
     """
-    st.components.v1.html(audio_html, height=55)
+    st.components.v1.html(audio_html, height=60)
 
 def parse_text_locally(text):
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
@@ -150,7 +152,7 @@ def parse_text_locally(text):
                 i += 1
             continue
 
-        # 2. Word Box for Fill in the Blanks / Read & Complete
+        # 2. Word Box for Fill in the Blanks
         if re.match(r'(?i)^box\s*:\s*', line):
             raw_box = re.sub(r'(?i)^box\s*:\s*', '', line).strip('[] ')
             current_box_words = [w.strip().strip('"\'') for w in raw_box.split(',') if w.strip()]
@@ -178,7 +180,7 @@ def parse_text_locally(text):
                 })
             continue
 
-        # 4. Reorder
+        # 4. Reorder (With Scramble Protection)
         elif re.search(r'(?i)words\s*:', line):
             words_raw = re.search(r'\[(.*?)\]', line)
             words = [w.strip().strip('"\'') for w in words_raw.group(1).split(',')] if words_raw else []
@@ -188,15 +190,20 @@ def parse_text_locally(text):
                 answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
                 i += 1
             if words:
+                correct_ans = answer if answer else " ".join(words)
+                # Shuffle words if given in correct order so the student has to reorder
+                shuffled_words = list(words)
+                if len(shuffled_words) > 1 and " ".join(shuffled_words).lower() == correct_ans.lower():
+                    random.shuffle(shuffled_words)
                 questions.append({
                     "type": "reorder",
                     "question": "Rearrange the words to make a correct sentence:",
-                    "scrambled_words": words,
-                    "answer": answer if answer else " ".join(words)
+                    "scrambled_words": shuffled_words,
+                    "answer": correct_ans
                 })
             continue
 
-        # 5. Standard Questions (MCQ, Fill in blanks with box, Reading Questions)
+        # 5. Standard Questions (MCQ, Passage MCQ, Fill from Box)
         elif re.match(r'^\d+[\.\-]', line):
             q_text = line
             options = []
@@ -281,7 +288,7 @@ if active_exam and active_exam.get("questions"):
                     st.info(f"🏆 **درجتك المسجلة:** {prev['score']} / {prev['total']} ({prev['percentage']}%)")
                     
                     teacher_phone = "201090570624"
-                    wa_msg = f"*Exam:* {q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {prev['full_name']}\n*Grade:* {prev.get('grade', '')}\n*Phone:* {prev.get('phone', '')}\n*Recorded Score:* {prev['score']}/{prev['total']} ({prev['percentage']}%)"
+                    wa_msg = f"السلام عليكم مس خفـة الاتربي ، أنا الطالب(ة): {prev['full_name']}\nالصف: {prev.get('grade','')}\nلقد انتهيت من حل اختبار: {q_title}\nدرجتي: {prev['score']} من {prev['total']} ({prev['percentage']}%)."
                     whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(wa_msg)}"
                     
                     st.markdown(f"""
@@ -313,7 +320,7 @@ if active_exam and active_exam.get("questions"):
                     q_type = q.get('type', 'mcq')
                     st.markdown(f"**Question {idx + 1} (1 Mark)**")
                     
-                    # Reading Passage Display
+                    # Reading Passage Display with Audio Player
                     if q_type == "reading" and "passage" in q:
                         pass_text = q['passage']
                         if pass_text not in displayed_passages:
@@ -339,7 +346,7 @@ if active_exam and active_exam.get("questions"):
                             """, unsafe_allow_html=True)
                             displayed_boxes.add(box_key)
                     
-                    # Render Controls
+                    # Controls
                     if q_type in ["mcq", "reading"]:
                         st.write(q.get('question', ''))
                         user_answers[idx] = st.radio("Choose correct answer:", options=q.get('options', []), key=f"ans_mcq_{idx}", index=None)
@@ -366,14 +373,12 @@ if active_exam and active_exam.get("questions"):
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
-        # Results & Model Answers
+        # Results & Model Answers (On-screen Model Answers for Student)
         if st.session_state.get('exam_submitted', False):
             st.subheader("📋 Results & Model Answers")
             score = 0
             total = len(questions)
             user_answers = st.session_state.get('submitted_answers', {})
-            
-            breakdown_text = f"*Exam:* {q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {active_student}\n*Grade:* {active_grade}\n*Phone:* {active_phone}\n"
             
             for idx, q in enumerate(questions):
                 q_type = q.get('type', 'mcq')
@@ -391,24 +396,25 @@ if active_exam and active_exam.get("questions"):
                 if is_correct:
                     score += 1
                     st.success(f"**Q{idx + 1}: Correct ✅** (Your answer: {ans})")
-                    breakdown_text += f"Q{idx+1}: Correct ✅\n"
                 else:
                     st.error(f"**Q{idx + 1}: Incorrect ❌** | Your answer: {ans or 'None'} | **Model Answer:** {correct}")
-                    breakdown_text += f"Q{idx+1}: Incorrect ❌ (Ans: {ans or 'None'} | Correct: {correct})\n"
                     
             percentage = round((score / total) * 100, 1)
             st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
-            breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
             
+            # Record submission to disk
             record_submission(active_student, active_phone, active_grade, score, total, percentage)
             
+            # Short & Elegant WhatsApp Message for the Teacher
+            clean_wa_text = f"السلام عليكم مس خفـة الاتربي ، أنا الطالب(ة): {active_student}\nالصف: {active_grade} | هاتف: {active_phone}\nلقد انتهيت من حل اختبار: {q_title}\nدرجتي: {score} من {total} ({percentage}%)."
+            
             teacher_phone = "201090570624"
-            whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(breakdown_text)}"
+            whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(clean_wa_text)}"
             
             st.markdown(f"""
                 <div style="text-align: center; margin-top: 25px;">
                     <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 28px; text-decoration: none; font-size: 17px; font-weight: bold; border-radius: 8px; display: inline-block;">
-                        📲 Send Result to Mrs. Kheffa on WhatsApp
+                        📲 إرسال النتيجة إلى مس خفة على الواتساب
                     </a>
                 </div>
             """, unsafe_allow_html=True)
