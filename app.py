@@ -3,13 +3,9 @@ import json
 import os
 import string
 import re
-import time
 import urllib.parse
 from datetime import datetime
-from PIL import Image
 import pandas as pd
-from google import genai
-from google.genai import types
 
 st.set_page_config(
     page_title="Mrs. Kheffa Eletreby | English Assessments",
@@ -17,6 +13,7 @@ st.set_page_config(
     layout="centered"
 )
 
+# Responsive Custom Styling
 st.markdown("""
     <style>
     .main-title-box {
@@ -31,6 +28,16 @@ st.markdown("""
     .main-title-box h2 { font-size: 1.45rem; margin: 0; font-weight: 700; }
     .main-title-box h3 { font-size: 1.15rem; margin: 6px 0; color: #E0E7FF; font-weight: 600; }
     .main-title-box p { font-size: 0.95rem; margin: 0; color: #DBEAFE; }
+    .passage-box {
+        background-color: #F8FAFC;
+        border-left: 5px solid #3B82F6;
+        padding: 16px;
+        border-radius: 8px;
+        margin-bottom: 18px;
+        font-size: 1.05rem;
+        line-height: 1.6;
+        color: #1E293B;
+    }
     .stRadio label, .stSelectbox label, .stTextInput label { font-size: 1.05rem !important; font-weight: 600 !important; }
     .stButton>button { width: 100%; border-radius: 10px; height: 3em; font-weight: bold; font-size: 1.05rem; }
     </style>
@@ -73,7 +80,7 @@ def load_submissions():
 def clean_text_for_grading(text):
     if not text:
         return ""
-    text = text.translate(str.maketrans('', '', string.punctuation + '؟،؛«»ـ'))
+    text = text.translate(str.maketrans('', '', string.punctuation + '؟،؛«»ـ“”‘’'))
     text = text.lower()
     return " ".join(text.split())
 
@@ -93,26 +100,58 @@ def record_submission(student_name, student_phone, student_grade, score, total, 
     with open(SUBMISSIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(submissions, f, ensure_ascii=False, indent=2)
 
-def extract_json_safely(raw_text):
-    match = re.search(r'\[.*\]', raw_text, re.DOTALL)
-    if match:
-        return json.loads(match.group(0))
-    cleaned = raw_text.replace("```json", "").replace("```", "").strip()
-    return json.loads(cleaned)
+def render_speech_player(text_to_read):
+    clean_js_text = text_to_read.replace("'", "\\'").replace('"', '\\"').replace("\n", " ")
+    audio_html = f"""
+    <div style="margin: 12px 0;">
+        <button onclick="speakPassage()" style="background-color: #4F46E5; color: white; border: none; padding: 9px 18px; border-radius: 8px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+            🔊 Listen to Passage (استمع للنص الصوتي)
+        </button>
+        <script>
+        function speakPassage() {{
+            window.speechSynthesis.cancel();
+            var msg = new SpeechSynthesisUtterance('{clean_js_text}');
+            msg.lang = 'en-US';
+            msg.rate = 0.85;
+            window.speechSynthesis.speak(msg);
+        }}
+        </script>
+    </div>
+    """
+    st.components.v1.html(audio_html, height=55)
 
 def parse_text_locally(text):
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     questions = []
+    current_passage = ""
+    current_box_words = []
     i = 0
+    
     while i < len(lines):
         line = lines[i]
         
-        # 1. Matching
+        # 1. Passage Handler
+        if re.match(r'(?i)^passage\s*:\s*', line):
+            current_passage = re.sub(r'(?i)^passage\s*:\s*', '', line).strip()
+            i += 1
+            while i < len(lines) and not re.match(r'^\d+[\.\-]', lines[i]) and not re.search(r'(?i)^(match|words|box|complete)\s*:', lines[i]):
+                current_passage += " " + lines[i]
+                i += 1
+            continue
+
+        # 2. Read and Complete Box
+        if re.match(r'(?i)^box\s*:\s*', line):
+            raw_box = re.sub(r'(?i)^box\s*:\s*', '', line).strip('[] ')
+            current_box_words = [w.strip().strip('"\'') for w in raw_box.split(',') if w.strip()]
+            i += 1
+            continue
+
+        # 3. Matching
         if re.search(r'(?i)match\s*:', line):
             premise = re.sub(r'(?i)^\d+[\.\-]?\s*match\s*:\s*', '', line).strip()
             options, answer = [], ""
             i += 1
-            while i < len(lines) and not re.match(r'^\d+[\.\-]', lines[i]):
+            while i < len(lines) and not re.match(r'^\d+[\.\-]', lines[i]) and not re.search(r'(?i)^(passage|box)\s*:', lines[i]):
                 if re.search(r'(?i)^options\s*:', lines[i]):
                     opt_raw = re.sub(r'(?i)^options\s*:\s*', '', lines[i]).strip('[] ')
                     options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
@@ -127,8 +166,8 @@ def parse_text_locally(text):
                     "answer": answer if answer else options[0]
                 })
             continue
-            
-        # 2. Reorder
+
+        # 4. Reorder
         elif re.search(r'(?i)words\s*:', line):
             words_raw = re.search(r'\[(.*?)\]', line)
             words = [w.strip().strip('"\'') for w in words_raw.group(1).split(',')] if words_raw else []
@@ -145,22 +184,42 @@ def parse_text_locally(text):
                     "answer": answer if answer else " ".join(words)
                 })
             continue
-            
-        # 3. MCQ / Fill-in-the-blank
+
+        # 5. Standard Questions (MCQ / Correct the Mistake / Fill in blanks / Read & Answer)
         elif re.match(r'^\d+[\.\-]', line):
             q_text = line
             options = []
+            answer = ""
             i += 1
-            while i < len(lines) and re.match(r'^[a-dA-D][\.\)]', lines[i]):
-                opt_val = re.sub(r'^[a-dA-D][\.\)]\s*', '', lines[i]).strip()
-                options.append(opt_val)
+            while i < len(lines) and (re.match(r'^[a-dA-D][\.\)]', lines[i]) or re.search(r'(?i)^answer\s*:', lines[i]) or re.search(r'(?i)^options\s*:', lines[i])):
+                if re.search(r'(?i)^answer\s*:', lines[i]):
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
+                elif re.search(r'(?i)^options\s*:', lines[i]):
+                    opt_raw = re.sub(r'(?i)^options\s*:\s*', '', lines[i]).strip('[] ')
+                    options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
+                else:
+                    opt_val = re.sub(r'^[a-dA-D][\.\)]\s*', '', lines[i]).strip()
+                    options.append(opt_val)
                 i += 1
+
+            if current_box_words and not options:
+                options = current_box_words
+
             if options:
-                questions.append({
-                    "type": "mcq",
+                q_obj = {
+                    "type": "reading" if current_passage else "mcq",
                     "question": q_text,
                     "options": options,
-                    "answer": options[0]
+                    "answer": answer if answer else options[0]
+                }
+                if current_passage:
+                    q_obj["passage"] = current_passage
+                questions.append(q_obj)
+            elif answer:
+                questions.append({
+                    "type": "fill_text",
+                    "question": q_text,
+                    "answer": answer
                 })
             continue
         i += 1
@@ -181,18 +240,10 @@ if active_exam and active_exam.get("questions"):
         stu_phone = st.text_input("رقم تليفون الطالب أو ولي الأمر (Phone Number):", key="gate_student_phone")
         stu_grade = st.selectbox("الصف الدراسي (Grade):", [
             "-- اختر الصف الدراسي --",
-            "Primary 1 (أولى ابتدائي)",
-            "Primary 2 (تانية ابتدائي)",
-            "Primary 3 (تالتة ابتدائي)",
-            "Primary 4 (رابعة ابتدائي)",
-            "Primary 5 (خامسة ابتدائي)",
-            "Primary 6 (سادسة ابتدائي)",
-            "Prep 1 (أولى إعدادي)",
-            "Prep 2 (تانية إعدادي)",
-            "Prep 3 (تالتة إعدادي)",
-            "Secondary 1 (أولى ثانوي)",
-            "Secondary 2 (تانية ثانوي)",
-            "Secondary 3 (تالتة ثانوي)"
+            "Primary 1 (أولى ابتدائي)", "Primary 2 (تانية ابتدائي)", "Primary 3 (تالتة ابتدائي)",
+            "Primary 4 (رابعة ابتدائي)", "Primary 5 (خامسة ابتدائي)", "Primary 6 (سادسة ابتدائي)",
+            "Prep 1 (أولى إعدادي)", "Prep 2 (تانية إعدادي)", "Prep 3 (تالتة إعدادي)",
+            "Secondary 1 (أولى ثانوي)", "Secondary 2 (تانية ثانوي)", "Secondary 3 (تالتة ثانوي)"
         ], key="gate_student_grade")
         
         start_btn = st.button("🚀 بدء الاختبار (Start Exam)")
@@ -211,7 +262,7 @@ if active_exam and active_exam.get("questions"):
                 
                 if clean_phone_input in all_subs or norm_name in all_subs:
                     prev = all_subs.get(clean_phone_input, all_subs.get(norm_name))
-                    st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بهذا الرقم/الاسم بتاريخ {prev['timestamp']}. لا يُسمح بإعادة الاختبار.")
+                    st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بتاريخ {prev['timestamp']}. لا يُسمح بإعادة الاختبار.")
                     st.info(f"🏆 **درجتك المسجلة:** {prev['score']} / {prev['total']} ({prev['percentage']}%)")
                     
                     teacher_phone = "201090570624"
@@ -240,19 +291,27 @@ if active_exam and active_exam.get("questions"):
             
             with st.form("interactive_exam_form"):
                 user_answers = {}
+                displayed_passages = set()
+                
                 for idx, q in enumerate(questions):
                     q_type = q.get('type', 'mcq')
                     st.markdown(f"**Question {idx + 1} (1 Mark)**")
                     
                     if q_type == "reading" and "passage" in q:
-                        st.info(f"📖 **Read the passage:**\n\n{q['passage']}")
+                        pass_text = q['passage']
+                        if pass_text not in displayed_passages:
+                            st.markdown(f"""
+                            <div class="passage-box">
+                                📖 <b>Read the text / اقرأ النص التالي:</b><br><br>
+                                {pass_text}
+                            </div>
+                            """, unsafe_allow_html=True)
+                            render_speech_player(pass_text)
+                            displayed_passages.add(pass_text)
                     
                     if q_type in ["mcq", "reading"]:
                         st.write(q.get('question', ''))
-                        user_answers[idx] = st.radio("Choose correct answer:", options=q.get('options', []), key=f"ans_mcq_{idx}", index=None)
-                    elif q_type == "fill_blank":
-                        st.write(q.get('question', ''))
-                        user_answers[idx] = st.selectbox("Select missing word:", options=["-- Select --"] + q.get('options', []), key=f"ans_fill_{idx}")
+                        user_answers[idx] = st.radio("Choose correct answer / اختر الإجابة الصحيحة:", options=q.get('options', []), key=f"ans_mcq_{idx}", index=None)
                     elif q_type == "matching":
                         st.write(f"🔹 Match: **{q.get('premise', '')}**")
                         user_answers[idx] = st.selectbox("Select match:", options=["-- Select Match --"] + q.get('options', []), key=f"ans_match_{idx}")
@@ -264,6 +323,10 @@ if active_exam and active_exam.get("questions"):
                             user_answers[idx] = " ".join(selected_words)
                         else:
                             user_answers[idx] = st.text_input("Write sentence in correct order:", key=f"ans_txt_reorder_{idx}")
+                    elif q_type == "fill_text":
+                        st.write(q.get('question', ''))
+                        user_answers[idx] = st.text_input("Write your answer:", key=f"ans_filltxt_{idx}")
+                        
                     st.write("---")
                     
                 submit = st.form_submit_button("Submit Exam & View Results 📊")
@@ -287,11 +350,11 @@ if active_exam and active_exam.get("questions"):
                 correct = q.get('answer', '')
                 is_correct = False
                 
-                if q_type in ["reorder", "fill_blank"]:
+                if q_type in ["reorder", "fill_text"]:
                     if clean_text_for_grading(str(ans)) == clean_text_for_grading(str(correct)) and ans:
                         is_correct = True
                 else:
-                    if str(ans).strip() == str(correct).strip() and ans not in ["-- Select --", "-- Select Match --", None, ""]:
+                    if str(ans).strip() == str(correct).strip() and ans not in ["-- Select Match --", None, ""]:
                         is_correct = True
                         
                 if is_correct:
@@ -327,69 +390,23 @@ with st.expander("🔒 Admin Portal", expanded=False):
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! هذه لوحة التحكم الخاصة بكِ فقط.")
+        st.success("أهلاً بكِ مس خفة! هذه لوحة التحكم الخاصة بكِ.")
         quiz_title = st.text_input("Quiz Title / Grade:", "Prep 1 - Assessment", key="exam_title_input")
-        api_key = st.text_input("Gemini API Key (مطلوب فقط عند رفع ملف):", type="password", key="api_key_input")
-        
-        uploaded_file = st.file_uploader("Upload PDF or Image (اختياري):", type=["pdf", "png", "jpg", "jpeg"])
-        raw_text = st.text_area("Or paste formatted questions text here (الأسرع والموصى به دائماً):", height=150)
+        raw_text = st.text_area("Paste formatted questions text here:", height=220)
         
         col_pub, col_rst = st.columns([2, 1])
         with col_pub:
             if st.button("🚀 Publish Exam to All Students"):
-                if raw_text.strip() and uploaded_file is None:
+                if raw_text.strip():
                     parsed = parse_text_locally(raw_text)
                     if parsed and len(parsed) > 0:
                         save_exam_to_disk(quiz_title, parsed)
                         st.success(f"🎉 تم استخراج {len(parsed)} سؤال ونشر الاختبار '{quiz_title}' لجميع الطلاب فوراً!")
                         st.rerun()
-                
-                if not api_key:
-                    st.error("يرجى إدخال Gemini API Key.")
-                elif uploaded_file is None and not raw_text.strip():
-                    st.error("يرجى إدخال نص الأسئلة أو رفع ملف.")
+                    else:
+                        st.error("يرجى التأكد من كتابة الأسئلة بالتنسيق المطلوب.")
                 else:
-                    with st.spinner("Processing questions & publishing..."):
-                        client = genai.Client(api_key=api_key)
-                        prompt = """
-                        Strictly extract and convert the provided English exam questions into a JSON array.
-                        DO NOT add any questions outside the provided material.
-                        
-                        Return ONLY a raw JSON array:
-                        [
-                          {"type": "mcq", "question": "...", "options": ["A", "B", "C", "D"], "answer": "A"},
-                          {"type": "fill_blank", "question": "...", "options": ["opt1", "opt2"], "answer": "opt1"},
-                          {"type": "matching", "premise": "Item A", "options": ["Choice 1", "Choice 2"], "answer": "Choice 1"},
-                          {"type": "reorder", "question": "Rearrange:", "scrambled_words": ["word1", "word2"], "answer": "word1 word2"}
-                        ]
-                        """
-                        contents = [prompt]
-                        if uploaded_file is not None:
-                            bytes_data = uploaded_file.getvalue()
-                            if uploaded_file.type == "application/pdf":
-                                contents.append(types.Part.from_bytes(data=bytes_data, mime_type="application/pdf"))
-                            elif uploaded_file.type.startswith("image/"):
-                                contents.append(Image.open(uploaded_file))
-                        if raw_text.strip():
-                            contents.append(f"\n--- EXAM CONTENT ---\n{raw_text}")
-                            
-                        parsed = None
-                        for attempt in range(3):
-                            try:
-                                res = client.models.generate_content(model="gemini-3.6-flash", contents=contents)
-                                if res and res.text:
-                                    parsed = extract_json_safely(res.text)
-                                    if parsed:
-                                        break
-                            except Exception:
-                                time.sleep(2)
-                                
-                        if parsed and len(parsed) > 0:
-                            save_exam_to_disk(quiz_title, parsed)
-                            st.success(f"🎉 تم نشر الاختبار '{quiz_title}' لجميع الطلاب بنجاح!")
-                            st.rerun()
-                        else:
-                            st.error("تعذر المعالجة عبر الذكاء الاصطناعي حالياً. يرجى لصق نص الأسئلة المنسق مباشرة في المربع للتحويل الفوري!")
+                    st.error("يرجى لصق نص الأسئلة أولاً.")
 
         with col_rst:
             if st.button("🔄 Reset All Student Submissions"):
