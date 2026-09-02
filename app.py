@@ -6,7 +6,6 @@ import re
 import urllib.parse
 from datetime import datetime, timezone, timedelta
 import pandas as pd
-from zoneinfo import ZoneInfo
 
 st.set_page_config(
     page_title="Mrs. Kheffa Eletreby | English Assessments",
@@ -14,7 +13,9 @@ st.set_page_config(
     layout="centered"
 )
 
-# Custom High-End Styling
+# Timezone Offset for Egypt (UTC+3)
+EGYPT_TZ = timezone(timedelta(hours=3))
+
 st.markdown("""
     <style>
     .main-title-box {
@@ -124,36 +125,43 @@ GRADES_MAP = {
 
 GRADES_LIST = list(GRADES_MAP.values())
 
-def get_cairo_now():
-    """Fetches the exact local date and time in Cairo, Egypt."""
-    try:
-        return datetime.now(ZoneInfo("Africa/Cairo"))
-    except Exception:
-        # Fallback to UTC+3 (Egypt Daylight Time)
-        return datetime.now(timezone(timedelta(hours=3)))
+def get_current_egypt_time():
+    """Always returns exact Egypt Local Time (UTC+3) in 12-hr AM/PM format."""
+    return datetime.now(EGYPT_TZ).strftime("%Y-%m-%d | %I:%M %p")
 
-def get_current_12hr_time():
-    """Returns readable date and time in Egypt Local Time (12-hour AM/PM)."""
-    return get_cairo_now().strftime("%Y-%m-%d | %I:%M %p")
-
-def format_to_12hr(date_str):
-    """Converts 24-hr or UTC timestamp into Egypt 12-hr format."""
+def adjust_legacy_time(date_str):
+    """Detects UTC legacy times and adjusts them by adding 3 hours to match Egypt Local Time."""
     if not date_str:
         return ""
     date_str = str(date_str).strip()
-    patterns = [
+    
+    # Check 1: Old raw 24-hr formats like 15:57 30-08-2026
+    raw_patterns = [
         "%H:%M %d-%m-%Y",
         "%d-%m-%Y %H:%M",
         "%Y-%m-%d %H:%M",
         "%Y-%m-%d %H:%M:%S",
         "%H:%M:%S %d-%m-%Y"
     ]
-    for p in patterns:
+    for p in raw_patterns:
         try:
             dt = datetime.strptime(date_str, p)
-            return dt.strftime("%Y-%m-%d | %I:%M %p")
+            # Add 3 hours to compensate for server UTC
+            dt_egypt = dt + timedelta(hours=3)
+            return dt_egypt.strftime("%Y-%m-%d | %I:%M %p")
         except ValueError:
             continue
+
+    # Check 2: If it was saved with old 12-hr UTC without the 3 hours
+    try:
+        if "|" in date_str and ("AM" in date_str or "PM" in date_str):
+            dt = datetime.strptime(date_str, "%Y-%m-%d | %I:%M %p")
+            # Shift by 3 hours
+            dt_egypt = dt + timedelta(hours=3)
+            return dt_egypt.strftime("%Y-%m-%d | %I:%M %p")
+    except Exception:
+        pass
+        
     return date_str
 
 def load_exam_bank():
@@ -213,7 +221,7 @@ def record_submission(exam_key, exam_title, student_name, student_phone, student
         "score": score,
         "total": total,
         "percentage": percentage,
-        "timestamp": get_current_12hr_time()
+        "timestamp": get_current_egypt_time()
     }
     with open(SUBMISSIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(submissions, f, ensure_ascii=False, indent=2)
@@ -239,7 +247,6 @@ def render_speech_player(text_to_read):
     st.components.v1.html(audio_html, height=60)
 
 def render_honor_card_widget(grade_name, exam_name, winners_list):
-    """Generates an aesthetic, high-resolution honor card displaying Grade tags and an instant download button."""
     rows_html = ""
     medals = ["🥇", "🥈", "🥉", "⭐", "⭐", "⭐", "⭐", "⭐"]
     colors = ["#F59E0B", "#64748B", "#B45309", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5"]
@@ -401,7 +408,7 @@ def parse_text_locally(text):
         i += 1
     return questions
 
-# --- ROBUST EXAM LOCATOR ---
+# --- EXAM LOCATOR ---
 exam_bank = load_exam_bank()
 active_grades_map = load_active_grades()
 query_params = st.query_params
@@ -502,11 +509,11 @@ if active_exam and active_exam.get("questions"):
                 
                 if check_phone_key in all_subs or check_name_key in all_subs:
                     prev = all_subs.get(check_phone_key, all_subs.get(check_name_key))
-                    st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بهذا الرقم/الاسم بتاريخ {format_to_12hr(prev['timestamp'])}. لا يُسمح بإعادة الاختبار.")
+                    st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بهذا الرقم/الاسم بتاريخ {adjust_legacy_time(prev['timestamp'])}. لا يُسمح بإعادة الاختبار.")
                     st.info(f"🏆 **درجتك المسجلة:** {prev['score']} / {prev['total']} ({prev['percentage']}%)")
                     
                     teacher_phone = "201090570624"
-                    wa_msg = f"*Exam:* {exam_number_display} - {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {prev['full_name']}\n*Grade:* {resolved_grade}\n*Phone:* {prev.get('phone', '')}\n*Recorded Score:* {prev['score']}/{prev['total']} ({prev['percentage']}%)\n*Time:* {format_to_12hr(prev.get('timestamp', ''))}"
+                    wa_msg = f"*Exam:* {exam_number_display} - {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {prev['full_name']}\n*Grade:* {resolved_grade}\n*Phone:* {prev.get('phone', '')}\n*Recorded Score:* {prev['score']}/{prev['total']} ({prev['percentage']}%)\n*Time:* {adjust_legacy_time(prev.get('timestamp', ''))}"
                     whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(wa_msg)}"
                     
                     st.markdown(f"""
@@ -592,7 +599,7 @@ if active_exam and active_exam.get("questions"):
             score = 0
             total = len(questions)
             user_answers = st.session_state.get('submitted_answers', {})
-            current_time_str = get_current_12hr_time()
+            current_time_str = get_current_egypt_time()
             
             full_exam_desc = f"{exam_number_display} - {meta_tag}{q_title}".strip()
             breakdown_text = f"*Exam:* {full_exam_desc}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {active_student}\n*Grade:* {resolved_grade}\n*Phone:* {active_phone}\n*Time:* {current_time_str}\n"
@@ -643,11 +650,10 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم بتوقيت مصر والروابط المرقمة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مضبوطة بتوقيت مصر تماماً.")
         
         tab_reports, tab_bank, tab_new = st.tabs(["📊 كشوف الدرجات ولوحة الشرف", "📚 استعراض بنك الاختبارات", "➕ إضافة اختبار جديد لصف"])
         
-        # TAB 1: REPORTS WITH VISUAL HONOR ROLL CARD DISPLAYING GRADES
         with tab_reports:
             st.markdown("### 📊 كشوف الدرجات ولوحة الشرف")
             subs = load_submissions()
@@ -670,7 +676,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         "الدرجة": s_data.get('score', 0),
                         "المجموع": s_data.get('total', 0),
                         "النسبة": s_data.get('percentage', 0),
-                        "وقت التسليم": format_to_12hr(s_data.get('timestamp', ''))
+                        "وقت التسليم": adjust_legacy_time(s_data.get('timestamp', ''))
                     })
                 df_all = pd.DataFrame(records)
                 
@@ -698,7 +704,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 
                 df_filtered = df_filtered.sort_values(by=["النسبة", "الدرجة"], ascending=[False, False])
                 
-                # --- VISUAL HONOR CARD GENERATOR WITH GRADE BADGES ---
                 if not df_filtered.empty:
                     top_threshold = df_filtered["النسبة"].max()
                     top_students_df = df_filtered[df_filtered["النسبة"] >= min(85.0, top_threshold)].head(8)
@@ -742,7 +747,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
 
-        # TAB 2: BROWSE EXAM BANK
         with tab_bank:
             st.markdown("### 🔍 اختاري الصف الدراسي المطلوب:")
             selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
@@ -780,7 +784,8 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     t_lbl = e_info.get('title', '')
                     num_q = len(e_info.get('questions', []))
                     
-                    cr_date_12hr = format_to_12hr(e_info.get('created_at', ''))
+                    # Converted and auto-adjusted to Egypt time!
+                    cr_date_12hr = adjust_legacy_time(e_info.get('created_at', ''))
                     numbered_quiz_url = f"https://mrs-kheffa-quiz.streamlit.app/?g={sc_code}&exam={idx}"
                     
                     card_class = "card-active" if is_current else "card-idle"
@@ -820,7 +825,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
 
-        # TAB 3: ADD NEW EXAM
         with tab_new:
             st.markdown("#### 📝 تجهيز وحفظ اختبار جديد")
             c_g, c_u, c_l = st.columns([2, 1, 1])
@@ -850,7 +854,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             "lesson": quiz_lesson.strip(),
                             "grade": sel_grade,
                             "questions": parsed,
-                            "created_at": get_current_12hr_time()
+                            "created_at": get_current_egypt_time()
                         }
                         save_exam_bank(bank)
                         
