@@ -38,34 +38,34 @@ st.markdown("""
     }
     .card-active {
         background: #F0FDF4;
-        border: 2px solid #22C55E;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 14px;
-        box-shadow: 0 2px 6px rgba(34,197,94,0.1);
+        border: 2.5px solid #22C55E;
+        border-radius: 12px;
+        padding: 18px;
+        margin-bottom: 16px;
+        box-shadow: 0 3px 8px rgba(34,197,94,0.12);
     }
     .card-idle {
         background: #F8FAFC;
-        border: 1px solid #CBD5E1;
-        border-left: 6px solid #64748B;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 14px;
+        border: 1.5px solid #CBD5E1;
+        border-right: 6px solid #64748B;
+        border-radius: 12px;
+        padding: 18px;
+        margin-bottom: 16px;
     }
     .badge-active {
         background-color: #16A34A;
         color: white;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 0.88rem;
+        padding: 5px 14px;
+        border-radius: 20px;
+        font-size: 0.9rem;
         font-weight: 700;
     }
     .badge-idle {
         background-color: #64748B;
         color: white;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 0.88rem;
+        padding: 5px 14px;
+        border-radius: 20px;
+        font-size: 0.9rem;
         font-weight: 600;
     }
     .passage-box {
@@ -122,9 +122,27 @@ GRADES_MAP = {
 
 GRADES_LIST = list(GRADES_MAP.values())
 
+def format_to_12hr(date_str):
+    if not date_str:
+        return ""
+    date_str = str(date_str).strip()
+    patterns = [
+        "%H:%M %d-%m-%Y",
+        "%d-%m-%Y %H:%M",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%H:%M:%S %d-%m-%Y"
+    ]
+    for p in patterns:
+        try:
+            dt = datetime.strptime(date_str, p)
+            return dt.strftime("%Y-%m-%d | %I:%M %p")
+        except ValueError:
+            continue
+    return date_str
+
 def get_current_12hr_time():
-    """Returns readable date and time in 12-hour AM/PM format."""
-    return datetime.now().strftime("%Y-%m-%d %I:%M %p")
+    return datetime.now().strftime("%Y-%m-%d | %I:%M %p")
 
 def load_exam_bank():
     if os.path.exists(EXAM_BANK_FILE):
@@ -311,7 +329,7 @@ def parse_text_locally(text):
         i += 1
     return questions
 
-# --- ROBUST EXAM LOCATOR ---
+# --- ROBUST EXAM LOCATOR (Supports ?g=4&exam=1 or ?quiz=...) ---
 exam_bank = load_exam_bank()
 active_grades_map = load_active_grades()
 query_params = st.query_params
@@ -319,6 +337,7 @@ query_params = st.query_params
 resolved_grade = None
 active_exam = None
 active_exam_key = ""
+exam_number_display = ""
 
 # 1. Direct Quiz ID Parameter (?quiz=...)
 quiz_id_param = query_params.get("quiz", None)
@@ -328,11 +347,16 @@ if quiz_id_param:
             active_exam = exams_dict[quiz_id_param]
             resolved_grade = gr_name
             active_exam_key = f"{gr_name}_{quiz_id_param}"
+            keys_list = list(exams_dict.keys())
+            if quiz_id_param in keys_list:
+                exam_number_display = f"الاختبار رقم ({keys_list.index(quiz_id_param) + 1})"
             break
 
-# 2. Grade Parameter (?g=... or ?grade=...)
+# 2. Grade Parameter with Exam Number (?g=3&exam=1)
 if not active_exam:
     g_param = query_params.get("g", query_params.get("grade", None))
+    exam_num_param = query_params.get("exam", None)
+    
     if g_param:
         g_clean = str(g_param).lower().strip()
         if g_clean in GRADES_MAP:
@@ -343,14 +367,28 @@ if not active_exam:
                 resolved_grade = matched[0]
 
     if resolved_grade and resolved_grade in exam_bank:
-        target_eid = active_grades_map.get(resolved_grade)
-        if target_eid and target_eid in exam_bank[resolved_grade]:
-            active_exam = exam_bank[resolved_grade][target_eid]
-            active_exam_key = f"{resolved_grade}_{target_eid}"
-        elif len(exam_bank[resolved_grade]) > 0:
-            latest_eid = list(exam_bank[resolved_grade].keys())[-1]
-            active_exam = exam_bank[resolved_grade][latest_eid]
-            active_exam_key = f"{resolved_grade}_{latest_eid}"
+        grade_exams_list = list(exam_bank[resolved_grade].items())
+        
+        # Check if an explicit exam number is requested in the URL (e.g., &exam=1)
+        if exam_num_param and str(exam_num_param).isdigit():
+            idx_req = int(exam_num_param) - 1
+            if 0 <= idx_req < len(grade_exams_list):
+                target_eid, active_exam = grade_exams_list[idx_req]
+                active_exam_key = f"{resolved_grade}_{target_eid}"
+                exam_number_display = f"الاختبار رقم ({exam_num_param})"
+                
+        # If no specific number, fetch the grade's live active exam
+        if not active_exam:
+            target_eid = active_grades_map.get(resolved_grade)
+            if target_eid and target_eid in exam_bank[resolved_grade]:
+                active_exam = exam_bank[resolved_grade][target_eid]
+                active_exam_key = f"{resolved_grade}_{target_eid}"
+                keys_list = list(exam_bank[resolved_grade].keys())
+                exam_number_display = f"الاختبار رقم ({keys_list.index(target_eid) + 1})"
+            elif len(grade_exams_list) > 0:
+                latest_eid, active_exam = grade_exams_list[-1]
+                active_exam_key = f"{resolved_grade}_{latest_eid}"
+                exam_number_display = f"الاختبار رقم ({len(grade_exams_list)})"
 
 if not resolved_grade and not active_exam:
     st.markdown("### 🎓 مرحباً بك في منصة الاختبارات")
@@ -371,7 +409,7 @@ if active_exam and active_exam.get("questions"):
     q_lesson = active_exam.get("lesson", "")
     
     meta_tag = f"[{q_unit} - {q_lesson}] " if (q_unit or q_lesson) else ""
-    st.markdown(f"### 📝 {meta_tag}{q_title}")
+    st.markdown(f"### 📝 {exam_number_display} — {meta_tag}{q_title}")
     st.caption(f"📌 الصف الدراسي: **{resolved_grade}**")
     
     if 'current_verified_student' not in st.session_state:
@@ -396,11 +434,11 @@ if active_exam and active_exam.get("questions"):
                 
                 if check_phone_key in all_subs or check_name_key in all_subs:
                     prev = all_subs.get(check_phone_key, all_subs.get(check_name_key))
-                    st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بهذا الرقم/الاسم بتاريخ {prev['timestamp']}. لا يُسمح بإعادة الاختبار.")
+                    st.error(f"⚠️ عذراً يا {prev['full_name']}! لقد تم أداء هذا الاختبار مسبقاً بهذا الرقم/الاسم بتاريخ {format_to_12hr(prev['timestamp'])}. لا يُسمح بإعادة الاختبار.")
                     st.info(f"🏆 **درجتك المسجلة:** {prev['score']} / {prev['total']} ({prev['percentage']}%)")
                     
                     teacher_phone = "201090570624"
-                    wa_msg = f"*Exam:* {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {prev['full_name']}\n*Grade:* {resolved_grade}\n*Phone:* {prev.get('phone', '')}\n*Recorded Score:* {prev['score']}/{prev['total']} ({prev['percentage']}%)\n*Time:* {prev.get('timestamp', '')}"
+                    wa_msg = f"*Exam:* {exam_number_display} - {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {prev['full_name']}\n*Grade:* {resolved_grade}\n*Phone:* {prev.get('phone', '')}\n*Recorded Score:* {prev['score']}/{prev['total']} ({prev['percentage']}%)\n*Time:* {format_to_12hr(prev.get('timestamp', ''))}"
                     whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(wa_msg)}"
                     
                     st.markdown(f"""
@@ -488,7 +526,7 @@ if active_exam and active_exam.get("questions"):
             user_answers = st.session_state.get('submitted_answers', {})
             current_time_str = get_current_12hr_time()
             
-            breakdown_text = f"*Exam:* {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {active_student}\n*Grade:* {resolved_grade}\n*Phone:* {active_phone}\n*Time:* {current_time_str}\n"
+            breakdown_text = f"*Exam:* {exam_number_display} - {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {active_student}\n*Grade:* {resolved_grade}\n*Phone:* {active_phone}\n*Time:* {current_time_str}\n"
             
             for idx, q in enumerate(questions):
                 q_type = q.get('type', 'mcq')
@@ -536,7 +574,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم بنظام الوقت 12 ساعة (AM / PM).")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم بنظام الوقت 12 ساعة والروابط المرقمة.")
         
         tab_bank, tab_new, tab_reports = st.tabs(["📚 استعراض كشف امتحانات صف معين", "➕ إضافة اختبار جديد لصف", "📊 كشوف الدرجات"])
         
@@ -562,13 +600,13 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 <h4 style="margin:0; color:#1E40AF;">📁 مجلد: {selected_manage_grade}</h4>
                 <div style="margin-top:6px; font-size:0.95rem;">
                     🟢 <b>الامتحان المفتوح للطلاب حالياً:</b> <span style="color:#15803D; font-weight:bold;">{live_txt}</span><br>
-                    🔗 <b>رابط الجروب الدائم لهذا الصف:</b> <code>{group_link}</code>
+                    🔗 <b>رابط الجروب العام (يفتح الامتحان النشط):</b> <code>{group_link}</code>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
             if grade_exams:
-                st.markdown(f"**سجل اختبارات هذا الصف مرتبة ومؤرخة ({len(grade_exams)} اختبارات):**")
+                st.markdown(f"**سجل اختبارات هذا الصف مرتبة ومؤرخة بالروابط المرقمة ({len(grade_exams)} اختبارات):**")
                 
                 exam_items = list(grade_exams.items())
                 
@@ -578,38 +616,40 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     l_lbl = e_info.get('lesson', '')
                     t_lbl = e_info.get('title', '')
                     num_q = len(e_info.get('questions', []))
-                    cr_date = e_info.get('created_at', '')
                     
-                    direct_quiz_url = f"https://mrs-kheffa-quiz.streamlit.app/?quiz={e_id}"
+                    cr_date_12hr = format_to_12hr(e_info.get('created_at', ''))
+                    
+                    # Direct, Human-Readable Numbered Grade URL
+                    numbered_quiz_url = f"https://mrs-kheffa-quiz.streamlit.app/?g={sc_code}&exam={idx}"
                     
                     card_class = "card-active" if is_current else "card-idle"
-                    badge_html = '<span class="badge-active">🟢 شغال للطلبة الآن على الرابط</span>' if is_current else '<span class="badge-idle">⏸️ محفوظ في الأرشيف</span>'
+                    badge_html = '<span class="badge-active">🟢 شغال للطلبة الآن على رابط الجروب</span>' if is_current else '<span class="badge-idle">⏸️ محفوظ في الأرشيف</span>'
                     
                     st.markdown(f"""
                     <div class="{card_class}">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
-                            <span style="font-size:1.25rem; font-weight:800; color:#1E3A8A;">
-                                📝 الاختبار ({idx}) &nbsp;—&nbsp; 🕒 {cr_date}
+                            <span style="font-size:1.3rem; font-weight:800; color:#1E3A8A;">
+                                📝 الاختبار رقم ({idx}) &nbsp;—&nbsp; 🕒 {cr_date_12hr}
                             </span>
                             {badge_html}
                         </div>
-                        <div style="font-size:1.05rem; font-weight:600; color:#0F172A; margin-bottom: 6px;">
+                        <div style="font-size:1.05rem; font-weight:600; color:#0F172A; margin-bottom: 8px;">
                             📌 <b>الوحدة والدرس:</b> [{u_lbl} - {l_lbl}] &nbsp;|&nbsp; <b>الموضوع:</b> {t_lbl} &nbsp;|&nbsp; <b>الأسئلة:</b> {num_q} سؤال
                         </div>
-                        <div style="background:white; padding:6px 10px; border-radius:6px; border:1px solid #CBD5E1; font-size:0.88rem;">
-                            🔗 <b>رابط هذا الاختبار بالذات:</b> <code>{direct_quiz_url}</code>
+                        <div style="background:white; padding:7px 12px; border-radius:6px; border:1.5px solid #93C5FD; font-size:0.92rem;">
+                            🔗 <b>رابط هذا الاختبار المرقم بالصف:</b> <code>{numbered_quiz_url}</code>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
                     
                     c1, c2 = st.columns([3, 1])
                     if not is_current:
-                        if c1.button(f"🚀 تشغيل الاختبار ({idx}) لجروب الواتساب الآن", key=f"activate_{e_id}"):
+                        if c1.button(f"🚀 تشغيل الاختبار رقم ({idx}) لجروب الواتساب الآن", key=f"activate_{e_id}"):
                             set_active_exam_for_grade(selected_manage_grade, e_id)
-                            st.success(f"تم تفعيل الاختبار ({idx}) ليكون المتاح لجروب {selected_manage_grade}!")
+                            st.success(f"تم تفعيل الاختبار رقم ({idx}) ليكون المتاح لجروب {selected_manage_grade}!")
                             st.rerun()
                     else:
-                        c1.success(f"✅ الاختبار ({idx}) هو المتاح حالياً لجميع طلاب الجروب")
+                        c1.success(f"✅ الاختبار رقم ({idx}) هو المتاح حالياً لجميع طلاب الجروب")
                         
                     if c2.button(f"🗑️ حذف الاختبار ({idx})", key=f"del_{e_id}"):
                         del bank[selected_manage_grade][e_id]
@@ -677,7 +717,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         "الدرجة": s_data.get('score', 0),
                         "المجموع": s_data.get('total', 0),
                         "النسبة": f"{s_data.get('percentage', 0)}%",
-                        "وقت التسليم": s_data.get('timestamp', '')
+                        "وقت التسليم": format_to_12hr(s_data.get('timestamp', ''))
                     })
                 df = pd.DataFrame(df_data)
                 st.dataframe(df, use_container_width=True)
