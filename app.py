@@ -4,8 +4,9 @@ import os
 import string
 import re
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import pandas as pd
+from zoneinfo import ZoneInfo
 
 st.set_page_config(
     page_title="Mrs. Kheffa Eletreby | English Assessments",
@@ -13,6 +14,7 @@ st.set_page_config(
     layout="centered"
 )
 
+# Custom High-End Styling
 st.markdown("""
     <style>
     .main-title-box {
@@ -122,7 +124,20 @@ GRADES_MAP = {
 
 GRADES_LIST = list(GRADES_MAP.values())
 
+def get_cairo_now():
+    """Fetches the exact local date and time in Cairo, Egypt."""
+    try:
+        return datetime.now(ZoneInfo("Africa/Cairo"))
+    except Exception:
+        # Fallback to UTC+3 (Egypt Daylight Time)
+        return datetime.now(timezone(timedelta(hours=3)))
+
+def get_current_12hr_time():
+    """Returns readable date and time in Egypt Local Time (12-hour AM/PM)."""
+    return get_cairo_now().strftime("%Y-%m-%d | %I:%M %p")
+
 def format_to_12hr(date_str):
+    """Converts 24-hr or UTC timestamp into Egypt 12-hr format."""
     if not date_str:
         return ""
     date_str = str(date_str).strip()
@@ -140,9 +155,6 @@ def format_to_12hr(date_str):
         except ValueError:
             continue
     return date_str
-
-def get_current_12hr_time():
-    return datetime.now().strftime("%Y-%m-%d | %I:%M %p")
 
 def load_exam_bank():
     if os.path.exists(EXAM_BANK_FILE):
@@ -235,8 +247,6 @@ def render_honor_card_widget(grade_name, exam_name, winners_list):
     for i, w in enumerate(winners_list):
         medal = medals[i] if i < len(medals) else "⭐"
         color = colors[i] if i < len(colors) else "#4F46E5"
-        
-        # Clean Short Grade Tag (e.g. Primary 5)
         clean_g_tag = w.get('grade', '').split('(')[0].strip()
         grade_badge = f"<span style='background:#E0E7FF; color:#1E40AF; padding:3px 9px; border-radius:8px; font-size:0.85rem; font-weight:700; margin-left:8px;'>{clean_g_tag}</span>" if clean_g_tag else ""
         
@@ -633,7 +643,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم بنظام لوحات الشرف المصورة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم بتوقيت مصر والروابط المرقمة.")
         
         tab_reports, tab_bank, tab_new = st.tabs(["📊 كشوف الدرجات ولوحة الشرف", "📚 استعراض بنك الاختبارات", "➕ إضافة اختبار جديد لصف"])
         
