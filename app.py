@@ -41,29 +41,31 @@ st.markdown("""
         border: 2px solid #22C55E;
         border-radius: 10px;
         padding: 15px;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
+        box-shadow: 0 2px 6px rgba(34,197,94,0.1);
     }
     .card-idle {
         background: #F8FAFC;
         border: 1px solid #CBD5E1;
+        border-left: 6px solid #64748B;
         border-radius: 10px;
         padding: 15px;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
     }
     .badge-active {
         background-color: #16A34A;
         color: white;
-        padding: 3px 10px;
+        padding: 4px 12px;
         border-radius: 12px;
-        font-size: 0.85rem;
+        font-size: 0.88rem;
         font-weight: 700;
     }
     .badge-idle {
         background-color: #64748B;
         color: white;
-        padding: 3px 10px;
+        padding: 4px 12px;
         border-radius: 12px;
-        font-size: 0.85rem;
+        font-size: 0.88rem;
         font-weight: 600;
     }
     .passage-box {
@@ -529,13 +531,13 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مفهرسة ومفصولة لكل صف دراسي على حدة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مرقمة ومؤرخة بالترتيب لكل صف دراسي.")
         
-        tab_bank, tab_new, tab_reports = st.tabs(["📚 استعراض بنك امتحانات صف معين", "➕ إضافة اختبار جديد لصف", "📊 كشوف الدرجات"])
+        tab_bank, tab_new, tab_reports = st.tabs(["📚 استعراض كشف امتحانات صف معين", "➕ إضافة اختبار جديد لصف", "📊 كشوف الدرجات"])
         
-        # TAB 1: BROWSE BY SINGLE GRADE ONLY (Clean & Focused)
+        # TAB 1: BROWSE BY SINGLE GRADE ONLY
         with tab_bank:
-            st.markdown("### 🔍 اختاري الصف الدراسي الذي تريدين استعراضه:")
+            st.markdown("### 🔍 اختاري الصف الدراسي المطلوب:")
             selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
             
             short_c = [k for k, v in GRADES_MAP.items() if v == selected_manage_grade]
@@ -555,15 +557,19 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             <div class="grade-focus-header">
                 <h4 style="margin:0; color:#1E40AF;">📁 مجلد: {selected_manage_grade}</h4>
                 <div style="margin-top:6px; font-size:0.95rem;">
-                    🟢 <b>الامتحان المفتوح للطلاب حالياً:</b> <span style="color:#15803D;">{live_txt}</span><br>
+                    🟢 <b>الامتحان المفتوح للطلاب حالياً:</b> <span style="color:#15803D; font-weight:bold;">{live_txt}</span><br>
                     🔗 <b>رابط الجروب الدائم لهذا الصف:</b> <code>{group_link}</code>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
             if grade_exams:
-                st.markdown(f"**قائمة اختبارات هذا الصف ({len(grade_exams)} اختبارات محفوظة):**")
-                for e_id, e_info in list(grade_exams.items()):
+                st.markdown(f"**سجل اختبارات هذا الصف مرتبة ومؤرخة ({len(grade_exams)} اختبارات):**")
+                
+                # Sort and index tests explicitly (Test 1, Test 2, Test 3...)
+                exam_items = list(grade_exams.items())
+                
+                for idx, (e_id, e_info) in enumerate(exam_items, 1):
                     is_current = (e_id == active_id)
                     u_lbl = e_info.get('unit', '')
                     l_lbl = e_info.get('lesson', '')
@@ -574,33 +580,35 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     direct_quiz_url = f"https://mrs-kheffa-quiz.streamlit.app/?quiz={e_id}"
                     
                     card_class = "card-active" if is_current else "card-idle"
-                    badge_html = '<span class="badge-active">🟢 شغال للطلبة الآن</span>' if is_current else '<span class="badge-idle">⏸️ محفوظ كأرشيف للأسبوع القادم</span>'
+                    badge_html = '<span class="badge-active">🟢 شغال للطلبة الآن على الرابط</span>' if is_current else '<span class="badge-idle">⏸️ محفوظ في الأرشيف</span>'
                     
                     st.markdown(f"""
                     <div class="{card_class}">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <b style="font-size:1.15rem; color:#0F172A;">📖 {u_lbl} | {l_lbl} — {t_lbl}</b>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                            <span style="font-size:1.25rem; font-weight:800; color:#1E3A8A;">
+                                📝 الاختبار ({idx}) &nbsp;—&nbsp; 📅 {cr_date}
+                            </span>
                             {badge_html}
                         </div>
-                        <div style="color:#64748B; font-size:0.9rem; margin:6px 0;">
-                            📅 تاريخ الإضافة: <b>{cr_date}</b> &nbsp;|&nbsp; ❓ عدد الأسئلة: <b>{num_q} سؤال</b>
+                        <div style="font-size:1.05rem; font-weight:600; color:#0F172A; margin-bottom: 6px;">
+                            📌 <b>الوحدة والدرس:</b> [{u_lbl} - {l_lbl}] &nbsp;|&nbsp; <b>الموضوع:</b> {t_lbl} &nbsp;|&nbsp; <b>الأسئلة:</b> {num_q} سؤال
                         </div>
                         <div style="background:white; padding:6px 10px; border-radius:6px; border:1px solid #CBD5E1; font-size:0.88rem;">
-                            🔗 <b>رابط هذا الدرس فقط المباشر:</b> <code>{direct_quiz_url}</code>
+                            🔗 <b>رابط هذا الاختبار بالذات:</b> <code>{direct_quiz_url}</code>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
                     
                     c1, c2 = st.columns([3, 1])
                     if not is_current:
-                        if c1.button(f"🚀 تشغيل هذا الدرس [{u_lbl} - {l_lbl}] لجروب الواتساب الآن", key=f"activate_{e_id}"):
+                        if c1.button(f"🚀 تشغيل الاختبار ({idx}) لجروب الواتساب الآن", key=f"activate_{e_id}"):
                             set_active_exam_for_grade(selected_manage_grade, e_id)
-                            st.success(f"تم تفعيل [{u_lbl} - {l_lbl}] ليكون الاختبار المتاح لجروب {selected_manage_grade}!")
+                            st.success(f"تم تفعيل الاختبار ({idx}) ليكون المتاح لجروب {selected_manage_grade}!")
                             st.rerun()
                     else:
-                        c1.success("✅ هذا الدرس هو المفتوح حالياً للطلاب")
+                        c1.success(f"✅ الاختبار ({idx}) هو المتاح حالياً لجميع طلاب الجروب")
                         
-                    if c2.button("🗑️ حذف الدرس", key=f"del_{e_id}"):
+                    if c2.button(f"🗑️ حذف الاختبار ({idx})", key=f"del_{e_id}"):
                         del bank[selected_manage_grade][e_id]
                         save_exam_bank(bank)
                         st.rerun()
@@ -638,7 +646,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             "lesson": quiz_lesson.strip(),
                             "grade": sel_grade,
                             "questions": parsed,
-                            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+                            "created_at": datetime.now().strftime("%Y-%m-%d")
                         }
                         save_exam_bank(bank)
                         
@@ -646,7 +654,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             set_active_exam_for_grade(sel_grade, exam_id)
                             st.success(f"🎉 تم حفظ وتفعيل '{quiz_title}' لصف {sel_grade} فوراً!")
                         else:
-                            st.success(f"📁 تم حفظ '{quiz_title}' في مجلد {sel_grade} كأرشيف للأسبوع القادم!")
+                            st.success(f"📁 تم حفظ '{quiz_title}' في مجلد {sel_grade} بنجاح كأرشيف للأسبوع القادم!")
                         st.rerun()
                     else:
                         st.error("يرجى التأكد من كتابة الأسئلة بالتنسيق المطلوب.")
