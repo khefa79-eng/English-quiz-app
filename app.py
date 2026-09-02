@@ -13,7 +13,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# Custom High-End Educational UI
 st.markdown("""
     <style>
     .main-title-box {
@@ -29,49 +28,43 @@ st.markdown("""
     .main-title-box h3 { font-size: 1.15rem; margin: 6px 0; color: #E0E7FF; font-weight: 600; }
     .main-title-box p { font-size: 0.95rem; margin: 0; color: #DBEAFE; }
 
-    /* Cards in Teacher Archive */
+    .grade-focus-header {
+        background-color: #EFF6FF;
+        border: 2px solid #3B82F6;
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin: 15px 0;
+        color: #1E3A8A;
+    }
     .card-active {
         background: #F0FDF4;
         border: 2px solid #22C55E;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 14px;
-        box-shadow: 0 2px 8px rgba(34,197,94,0.15);
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 12px;
     }
     .card-idle {
         background: #F8FAFC;
         border: 1px solid #CBD5E1;
-        border-left: 6px solid #64748B;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 14px;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 12px;
     }
     .badge-active {
         background-color: #16A34A;
         color: white;
-        padding: 4px 10px;
-        border-radius: 20px;
+        padding: 3px 10px;
+        border-radius: 12px;
         font-size: 0.85rem;
         font-weight: 700;
-        display: inline-block;
     }
     .badge-idle {
         background-color: #64748B;
         color: white;
-        padding: 4px 10px;
-        border-radius: 20px;
+        padding: 3px 10px;
+        border-radius: 12px;
         font-size: 0.85rem;
         font-weight: 600;
-        display: inline-block;
-    }
-    .current-live-bar {
-        background: linear-gradient(90deg, #E0E7FF, #EEF2FF);
-        border: 1.5px solid #6366F1;
-        border-radius: 8px;
-        padding: 10px 14px;
-        margin-bottom: 12px;
-        color: #312E81;
-        font-weight: 700;
     }
     .passage-box {
         background-color: #F8FAFC;
@@ -530,20 +523,96 @@ if active_exam and active_exam.get("questions"):
 elif resolved_grade:
     st.info(f"👋 لا يوجد اختبار نشط حالياً لصف **{resolved_grade}**. يرجى من المعلمة تفعيل الاختبار من لوحة التحكم.")
 
-# --- TEACHER CONTROL PORTAL & STRUCTURED LESSON ARCHIVE ---
+# --- TEACHER CONTROL PORTAL & SINGLE-GRADE FOCUS ARCHIVE ---
 st.write("---")
 with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلمة)", expanded=False):
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مفهرسة حسب الدروس والوحدات.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مفهرسة ومفصولة لكل صف دراسي على حدة.")
         
-        tab_new, tab_bank, tab_reports = st.tabs(["➕ إضافة اختبار جديد", "📚 بنك الوحدات والمكتبة الشاملة", "📊 كشوف الدرجات"])
+        tab_bank, tab_new, tab_reports = st.tabs(["📚 استعراض بنك امتحانات صف معين", "➕ إضافة اختبار جديد لصف", "📊 كشوف الدرجات"])
         
+        # TAB 1: BROWSE BY SINGLE GRADE ONLY (Clean & Focused)
+        with tab_bank:
+            st.markdown("### 🔍 اختاري الصف الدراسي الذي تريدين استعراضه:")
+            selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
+            
+            short_c = [k for k, v in GRADES_MAP.items() if v == selected_manage_grade]
+            sc_code = short_c[0] if short_c else "1"
+            group_link = f"https://mrs-kheffa-quiz.streamlit.app/?g={sc_code}"
+            
+            bank = load_exam_bank()
+            active_map = load_active_grades()
+            grade_exams = bank.get(selected_manage_grade, {})
+            
+            active_id = active_map.get(selected_manage_grade, list(grade_exams.keys())[-1] if grade_exams else "")
+            active_obj = grade_exams.get(active_id)
+            
+            # Focused Header for this Grade
+            live_txt = f"[{active_obj.get('unit','')} - {active_obj.get('lesson','')}] {active_obj.get('title','')}" if active_obj else "لا يوجد اختبار نشط حالياً"
+            st.markdown(f"""
+            <div class="grade-focus-header">
+                <h4 style="margin:0; color:#1E40AF;">📁 مجلد: {selected_manage_grade}</h4>
+                <div style="margin-top:6px; font-size:0.95rem;">
+                    🟢 <b>الامتحان المفتوح للطلاب حالياً:</b> <span style="color:#15803D;">{live_txt}</span><br>
+                    🔗 <b>رابط الجروب الدائم لهذا الصف:</b> <code>{group_link}</code>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if grade_exams:
+                st.markdown(f"**قائمة اختبارات هذا الصف ({len(grade_exams)} اختبارات محفوظة):**")
+                for e_id, e_info in list(grade_exams.items()):
+                    is_current = (e_id == active_id)
+                    u_lbl = e_info.get('unit', '')
+                    l_lbl = e_info.get('lesson', '')
+                    t_lbl = e_info.get('title', '')
+                    num_q = len(e_info.get('questions', []))
+                    cr_date = e_info.get('created_at', '')
+                    
+                    direct_quiz_url = f"https://mrs-kheffa-quiz.streamlit.app/?quiz={e_id}"
+                    
+                    card_class = "card-active" if is_current else "card-idle"
+                    badge_html = '<span class="badge-active">🟢 شغال للطلبة الآن</span>' if is_current else '<span class="badge-idle">⏸️ محفوظ كأرشيف للأسبوع القادم</span>'
+                    
+                    st.markdown(f"""
+                    <div class="{card_class}">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <b style="font-size:1.15rem; color:#0F172A;">📖 {u_lbl} | {l_lbl} — {t_lbl}</b>
+                            {badge_html}
+                        </div>
+                        <div style="color:#64748B; font-size:0.9rem; margin:6px 0;">
+                            📅 تاريخ الإضافة: <b>{cr_date}</b> &nbsp;|&nbsp; ❓ عدد الأسئلة: <b>{num_q} سؤال</b>
+                        </div>
+                        <div style="background:white; padding:6px 10px; border-radius:6px; border:1px solid #CBD5E1; font-size:0.88rem;">
+                            🔗 <b>رابط هذا الدرس فقط المباشر:</b> <code>{direct_quiz_url}</code>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    c1, c2 = st.columns([3, 1])
+                    if not is_current:
+                        if c1.button(f"🚀 تشغيل هذا الدرس [{u_lbl} - {l_lbl}] لجروب الواتساب الآن", key=f"activate_{e_id}"):
+                            set_active_exam_for_grade(selected_manage_grade, e_id)
+                            st.success(f"تم تفعيل [{u_lbl} - {l_lbl}] ليكون الاختبار المتاح لجروب {selected_manage_grade}!")
+                            st.rerun()
+                    else:
+                        c1.success("✅ هذا الدرس هو المفتوح حالياً للطلاب")
+                        
+                    if c2.button("🗑️ حذف الدرس", key=f"del_{e_id}"):
+                        del bank[selected_manage_grade][e_id]
+                        save_exam_bank(bank)
+                        st.rerun()
+                    st.write("")
+            else:
+                st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
+
+        # TAB 2: ADD NEW EXAM
         with tab_new:
             st.markdown("#### 📝 تجهيز وحفظ اختبار جديد")
             c_g, c_u, c_l = st.columns([2, 1, 1])
-            sel_grade = c_g.selectbox("الصف الدراسي:", GRADES_LIST, key="new_exam_grade")
+            sel_grade = c_g.selectbox("الصف الدراسي المستهدف:", GRADES_LIST, key="new_exam_grade")
             quiz_unit = c_u.text_input("الوحدة (Unit):", "Unit 1", key="exam_unit_input")
             quiz_lesson = c_l.text_input("الدرس (Lesson):", "Lesson 1", key="exam_lesson_input")
             
@@ -551,7 +620,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             raw_text = st.text_area("ألصقي نص الأسئلة المنسقة هنا:", height=180, key="new_raw_text")
             
             col_save_draft, col_save_pub = st.columns([1, 1])
-            save_as_draft = col_save_draft.button("📁 حفظ في الأرشيف فقط (للأسبوع القادم)")
+            save_as_draft = col_save_draft.button("📁 حفظ في الأرشيف فقط (بدون تفعيل حالياً)")
             save_and_pub = col_save_pub.button("🚀 حفظ وتفعيل للطلاب فوراً")
             
             if save_as_draft or save_and_pub:
@@ -575,95 +644,16 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         
                         if save_and_pub:
                             set_active_exam_for_grade(sel_grade, exam_id)
-                            st.success(f"🎉 تم حفظ وتفعيل '{quiz_title} [{quiz_unit} - {quiz_lesson}]' لصف {sel_grade} بنجاح!")
+                            st.success(f"🎉 تم حفظ وتفعيل '{quiz_title}' لصف {sel_grade} فوراً!")
                         else:
-                            st.success(f"📁 تم حفظ '{quiz_title} [{quiz_unit} - {quiz_lesson}]' في الأرشيف بنجاح دون التأثير على ما يراه الطلاب الآن!")
+                            st.success(f"📁 تم حفظ '{quiz_title}' في مجلد {sel_grade} كأرشيف للأسبوع القادم!")
                         st.rerun()
                     else:
                         st.error("يرجى التأكد من كتابة الأسئلة بالتنسيق المطلوب.")
                 else:
-                    st.error("يرجى لصق نص الأسئلة.")
+                    st.error("يرجى لصق نص الأسئلة أولاً.")
 
-        with tab_bank:
-            bank = load_exam_bank()
-            active_map = load_active_grades()
-            
-            if bank:
-                st.markdown("### 📚 مكتبة وأرشيف الاختبارات المفهرسة")
-                
-                for gr_name in GRADES_LIST:
-                    if gr_name in bank and len(bank[gr_name]) > 0:
-                        exams_dict = bank[gr_name]
-                        short_c = [k for k, v in GRADES_MAP.items() if v == gr_name]
-                        sc_code = short_c[0] if short_c else "1"
-                        group_link = f"https://mrs-kheffa-quiz.streamlit.app/?g={sc_code}"
-                        
-                        active_id = active_map.get(gr_name, list(exams_dict.keys())[-1] if exams_dict else "")
-                        active_obj = exams_dict.get(active_id)
-                        
-                        # Expand box per Grade
-                        with st.expander(f"📁 {gr_name} — (يحتوي على {len(exams_dict)} اختبارات)", expanded=True):
-                            # Live indicator bar
-                            if active_obj:
-                                u_live = active_obj.get('unit', '')
-                                l_live = active_obj.get('lesson', '')
-                                t_live = active_obj.get('title', '')
-                                st.markdown(f"""
-                                <div class="current-live-bar">
-                                    🟢 <b>الاختبار المفتوح حالياً لطلاب هذا الصف:</b> [{u_live} - {l_live}] {t_live}<br>
-                                    🔗 <b>رابط الجروب الموحد:</b> <code>{group_link}</code>
-                                </div>
-                                """, unsafe_allow_html=True)
-                            
-                            st.write("---")
-                            
-                            # List all quizzes for this grade
-                            for e_id, e_info in list(exams_dict.items()):
-                                is_current = (e_id == active_id)
-                                u_lbl = e_info.get('unit', '')
-                                l_lbl = e_info.get('lesson', '')
-                                t_lbl = e_info.get('title', '')
-                                num_q = len(e_info.get('questions', []))
-                                cr_date = e_info.get('created_at', '')
-                                
-                                direct_quiz_url = f"https://mrs-kheffa-quiz.streamlit.app/?quiz={e_id}"
-                                
-                                card_class = "card-active" if is_current else "card-idle"
-                                badge_html = '<span class="badge-active">🟢 شغال للطلبة الآن على رابط الجروب</span>' if is_current else '<span class="badge-idle">⏸️ محفوظ كأرشيف / للأسبوع القادم</span>'
-                                
-                                st.markdown(f"""
-                                <div class="{card_class}">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                        <b style="font-size: 1.15rem; color: #0F172A;">📖 {u_lbl} | {l_lbl} — {t_lbl}</b>
-                                        {badge_html}
-                                    </div>
-                                    <div style="color: #64748B; font-size: 0.9rem; margin-bottom: 8px;">
-                                        📅 تاريخ الإنشاء: <b>{cr_date}</b> &nbsp;|&nbsp; ❓ عدد الأسئلة: <b>{num_q} سؤال</b>
-                                    </div>
-                                    <div style="background: white; padding: 6px 10px; border-radius: 6px; border: 1px solid #E2E8F0; font-size: 0.88rem;">
-                                        🔗 <b>الرابط الدائم المباشر لهذا الدرس بالذات:</b> <code>{direct_quiz_url}</code>
-                                    </div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                
-                                c1, c2 = st.columns([3, 1])
-                                if not is_current:
-                                    if c1.button(f"🚀 تشغيل هذا الدرس [{u_lbl} - {l_lbl}] لجروب الواتساب الآن", key=f"activate_{e_id}"):
-                                        set_active_exam_for_grade(gr_name, e_id)
-                                        st.success(f"تم تفعيل [{u_lbl} - {l_lbl}] ليكون الاختبار النشط للجروب!")
-                                        st.rerun()
-                                else:
-                                    c1.success("✅ هذا الدرس متاح للطلاب حالياً على رابط الجروب")
-                                    
-                                if c2.button("🗑️ حذف الدرس", key=f"del_{e_id}"):
-                                    del bank[gr_name][e_id]
-                                    save_exam_bank(bank)
-                                    st.rerun()
-                                    
-                                st.write("")
-            else:
-                st.info("لا توجد اختبارات محفوظة في البنك بعد.")
-
+        # TAB 3: REPORTS
         with tab_reports:
             subs = load_submissions()
             if subs:
