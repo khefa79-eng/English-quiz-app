@@ -4,7 +4,7 @@ import os
 import string
 import re
 import urllib.parse
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 import pandas as pd
 
 st.set_page_config(
@@ -15,6 +15,9 @@ st.set_page_config(
 
 # Egypt Local Time (UTC + 3 Hours)
 EGYPT_TIMEZONE = timezone(timedelta(hours=3))
+
+# Term Start Anchor: Saturday, August 29, 2026
+ACADEMIC_START_DATE = date(2026, 8, 29)
 
 st.markdown("""
     <style>
@@ -136,11 +139,9 @@ GRADES_MAP = {
 GRADES_LIST = list(GRADES_MAP.values())
 
 def get_current_egypt_time():
-    """Calculates exact Egypt Local Time (UTC+3) directly from UTC clock."""
     return datetime.now(timezone.utc).astimezone(EGYPT_TIMEZONE).strftime("%Y-%m-%d | %I:%M %p")
 
 def clean_time_display(date_str):
-    """Parses saved timestamps safely without over-shifting."""
     if not date_str:
         return ""
     date_str = str(date_str).strip()
@@ -155,7 +156,6 @@ def clean_time_display(date_str):
     return date_str
 
 def extract_date_obj(date_str):
-    """Extracts a date object for weekly grouping."""
     if not date_str:
         return None
     cleaned = clean_time_display(date_str)
@@ -164,6 +164,23 @@ def extract_date_obj(date_str):
         return datetime.strptime(raw_d, "%Y-%m-%d").date()
     except Exception:
         return None
+
+def calculate_custom_academic_week(sub_date):
+    """Calculates Week number starting from Saturday 2026-08-29."""
+    if not sub_date:
+        return "Week 1 (من 2026-08-29 إلى 2026-09-04)", 1
+        
+    days_diff = (sub_date - ACADEMIC_START_DATE).days
+    if days_diff < 0:
+        week_num = 1
+    else:
+        week_num = (days_diff // 7) + 1
+        
+    start_of_week = ACADEMIC_START_DATE + timedelta(days=(week_num - 1) * 7)
+    end_of_week = start_of_week + timedelta(days=6)
+    
+    label = f"Week {week_num} (من {start_of_week.strftime('%Y-%m-%d')} إلى {end_of_week.strftime('%Y-%m-%d')})"
+    return label, week_num
 
 def load_exam_bank():
     if os.path.exists(EXAM_BANK_FILE):
@@ -653,7 +670,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة بنظام أرشيف الأسابيع وكشوف الدرجات.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم بنظام الأسابيع الدراسية المخصصة (Week 1, Week 2...).")
         
         tab_weekly, tab_reports, tab_bank, tab_new = st.tabs([
             "🏆 أرشيف أوائل الأسابيع (Weekly Honor)", 
@@ -662,7 +679,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             "➕ إضافة اختبار جديد لصف"
         ])
         
-        # TAB 1: WEEKLY HONOR ROLL & ARCHIVE
+        # TAB 1: CUSTOM ACADEMIC WEEKLY HONOR ROLL
         with tab_weekly:
             st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع (Weekly Honor Roll)")
             subs = load_submissions()
@@ -671,12 +688,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 records = []
                 for _, s_data in subs.items():
                     d_obj = extract_date_obj(s_data.get('timestamp', ''))
-                    # Calculate calendar week label
-                    if d_obj:
-                        year, week_num, _ = d_obj.isocalendar()
-                        week_label = f"Week {week_num} ({year})"
-                    else:
-                        week_label = "Unassigned"
+                    week_label, week_sort_idx = calculate_custom_academic_week(d_obj)
                         
                     records.append({
                         "اسم الطالب": s_data.get('full_name', ''),
@@ -687,16 +699,17 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         "المجموع": s_data.get('total', 0),
                         "النسبة": s_data.get('percentage', 0),
                         "وقت التسليم": clean_time_display(s_data.get('timestamp', '')),
-                        "date_obj": d_obj,
-                        "week_label": week_label
+                        "week_label": week_label,
+                        "week_idx": week_sort_idx
                     })
                 df_weekly_all = pd.DataFrame(records)
                 
-                # Get available weeks sorted descending
-                unique_weeks = sorted(list(df_weekly_all["week_label"].unique()), reverse=True)
+                # Sort weeks logically (Week 1, Week 2...)
+                weeks_df = df_weekly_all[["week_label", "week_idx"]].drop_duplicates().sort_values(by="week_idx", ascending=False)
+                unique_weeks = weeks_df["week_label"].tolist()
                 
-                c_w1, c_w2 = st.columns([2, 1])
-                chosen_week = c_w1.selectbox("📅 اختاري الأسبوع المطلوب عرضه:", unique_weeks, key="sel_honor_week")
+                c_w1, c_w2 = st.columns([2.2, 1.2])
+                chosen_week = c_w1.selectbox("📅 اختاري الأسبوع الدراسي المطلوب:", unique_weeks, key="sel_honor_week")
                 filter_wk_grade = c_w2.selectbox("المرحلة:", ["جميع المراحل"] + GRADES_LIST, key="sel_honor_wk_grade")
                 
                 df_selected_week = df_weekly_all[df_weekly_all["week_label"] == chosen_week]
@@ -719,9 +732,10 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         })
                     
                     if wk_winners:
+                        short_wk_title = chosen_week.split('(')[0].strip()
                         render_honor_card_widget(
-                            f"🏆 أوائل {chosen_week} - {filter_wk_grade}",
-                            "أبطال التميز للأسبوع",
+                            f"🏆 أوائل {short_wk_title} - {filter_wk_grade}",
+                            chosen_week,
                             wk_winners,
                             card_id="weekly-honor-card"
                         )
@@ -731,15 +745,16 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     
                     df_wk_display = df_selected_week.copy()
                     df_wk_display["النسبة المئوية"] = df_wk_display["النسبة"].apply(lambda x: f"{x}%")
-                    df_wk_display = df_wk_display.drop(columns=["النسبة", "date_obj", "week_label"])
+                    df_wk_display = df_wk_display.drop(columns=["النسبة", "week_idx", "week_label"])
                     
                     st.dataframe(df_wk_display, use_container_width=True)
                     
-                    csv_wk_data = df_selected_week.drop(columns=["date_obj"]).to_csv(index=False).encode('utf-8-sig')
+                    clean_file_label = chosen_week.split(' ')[0] + "_" + chosen_week.split(' ')[1]
+                    csv_wk_data = df_selected_week.drop(columns=["week_idx"]).to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
-                        label=f"📥 تحميل شيت أوائل ({chosen_week}.csv)",
+                        label=f"📥 تحميل شيت أوائل ({clean_file_label}.csv)",
                         data=csv_wk_data,
-                        file_name=f"Top_Achievers_{chosen_week.replace(' ', '_')}.csv",
+                        file_name=f"Top_Achievers_{clean_file_label}.csv",
                         mime="text/csv"
                     )
                 else:
@@ -747,7 +762,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد تسليمات مسجلة لتوليد لوحة شرف الأسابيع بعد.")
 
-        # TAB 2: GENERAL REPORTS (FILTERED BY GRADE & EXAM)
+        # TAB 2: GENERAL REPORTS
         with tab_reports:
             st.markdown("### 📊 كشوف الدرجات العامة وتصفية الاختبارات")
             subs = load_submissions()
