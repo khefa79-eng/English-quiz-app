@@ -227,19 +227,25 @@ def render_speech_player(text_to_read):
     st.components.v1.html(audio_html, height=60)
 
 def render_honor_card_widget(grade_name, exam_name, winners_list):
-    """Generates an aesthetic, high-resolution honor card with an instant download button."""
+    """Generates an aesthetic, high-resolution honor card displaying Grade tags and an instant download button."""
     rows_html = ""
-    medals = ["🥇", "🥈", "🥉", "⭐", "⭐", "⭐"]
-    colors = ["#F59E0B", "#64748B", "#B45309", "#4F46E5", "#4F46E5", "#4F46E5"]
+    medals = ["🥇", "🥈", "🥉", "⭐", "⭐", "⭐", "⭐", "⭐"]
+    colors = ["#F59E0B", "#64748B", "#B45309", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5"]
     
     for i, w in enumerate(winners_list):
         medal = medals[i] if i < len(medals) else "⭐"
         color = colors[i] if i < len(colors) else "#4F46E5"
+        
+        # Clean Short Grade Tag (e.g. Primary 5)
+        clean_g_tag = w.get('grade', '').split('(')[0].strip()
+        grade_badge = f"<span style='background:#E0E7FF; color:#1E40AF; padding:3px 9px; border-radius:8px; font-size:0.85rem; font-weight:700; margin-left:8px;'>{clean_g_tag}</span>" if clean_g_tag else ""
+        
         rows_html += f"""
         <div style="display:flex; justify-content:space-between; align-items:center; background:#FFFFFF; padding:10px 16px; border-radius:10px; margin-bottom:8px; box-shadow:0 2px 4px rgba(0,0,0,0.04); border-right: 5px solid {color};">
-            <div style="display:flex; align-items:center; gap:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
                 <span style="font-size:1.4rem;">{medal}</span>
                 <span style="font-size:1.1rem; font-weight:800; color:#1E293B;">{w['name']}</span>
+                {grade_badge}
             </div>
             <div style="background:{color}; color:white; padding:4px 12px; border-radius:15px; font-weight:bold; font-size:0.95rem;">
                 {w['score']}% ({w['marks']})
@@ -254,7 +260,7 @@ def render_honor_card_widget(grade_name, exam_name, winners_list):
             📸 حفظ لوحة الشرف كصورة للواتساب (Download Image)
         </button>
     </div>
-    <div id="honor-certificate-card" style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 50%, #3B82F6 100%); padding: 25px; border-radius: 16px; color: white; font-family: sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 3px solid #FCD34D; max-width: 650px; margin: 0 auto;">
+    <div id="honor-certificate-card" style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 50%, #3B82F6 100%); padding: 25px; border-radius: 16px; color: white; font-family: sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 3px solid #FCD34D; max-width: 680px; margin: 0 auto;">
         <div style="text-align: center; border-bottom: 2px dashed rgba(255,255,255,0.3); padding-bottom: 15px; margin-bottom: 18px;">
             <div style="font-size: 1.8rem; margin-bottom: 4px;">🏆 <b>HONOR ROLL & TOP ACHIEVERS</b> 🏆</div>
             <div style="font-size: 1.25rem; font-weight: 700; color: #FEF08A;">لوحة شرف المتفوقين — Mrs. Kheffa Eletreby</div>
@@ -631,7 +637,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
         
         tab_reports, tab_bank, tab_new = st.tabs(["📊 كشوف الدرجات ولوحة الشرف", "📚 استعراض بنك الاختبارات", "➕ إضافة اختبار جديد لصف"])
         
-        # TAB 1: REPORTS WITH VISUAL HONOR ROLL CARD
+        # TAB 1: REPORTS WITH VISUAL HONOR ROLL CARD DISPLAYING GRADES
         with tab_reports:
             st.markdown("### 📊 كشوف الدرجات ولوحة الشرف")
             subs = load_submissions()
@@ -682,9 +688,8 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 
                 df_filtered = df_filtered.sort_values(by=["النسبة", "الدرجة"], ascending=[False, False])
                 
-                # --- VISUAL HONOR CARD GENERATOR ---
+                # --- VISUAL HONOR CARD GENERATOR WITH GRADE BADGES ---
                 if not df_filtered.empty:
-                    # Top achievers (e.g. >= 85% or top 5 students)
                     top_threshold = df_filtered["النسبة"].max()
                     top_students_df = df_filtered[df_filtered["النسبة"] >= min(85.0, top_threshold)].head(8)
                     
@@ -692,13 +697,14 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     for _, r in top_students_df.iterrows():
                         winners.append({
                             "name": r["اسم الطالب"],
+                            "grade": r["الصف الدراسي"],
                             "score": r["النسبة"],
                             "marks": f"{r['الدرجة']}/{r['المجموع']}"
                         })
                     
                     if winners:
                         render_honor_card_widget(
-                            filter_grade if filter_grade != "-- جميع المراحل معاً --" else "All Grades",
+                            filter_grade if filter_grade != "-- جميع المراحل معاً --" else "All Grades (جميع المراحل)",
                             chosen_exam_title,
                             winners
                         )
