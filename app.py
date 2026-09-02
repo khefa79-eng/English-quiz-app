@@ -36,14 +36,6 @@ st.markdown("""
         margin: 15px 0;
         color: #1E3A8A;
     }
-    .top-students-box {
-        background: linear-gradient(135deg, #FEF9C3, #FEF08A);
-        border: 2px solid #EAB308;
-        border-radius: 10px;
-        padding: 14px;
-        margin-bottom: 15px;
-        color: #854D0E;
-    }
     .card-active {
         background: #F0FDF4;
         border: 2.5px solid #22C55E;
@@ -234,6 +226,61 @@ def render_speech_player(text_to_read):
     """
     st.components.v1.html(audio_html, height=60)
 
+def render_honor_card_widget(grade_name, exam_name, winners_list):
+    """Generates an aesthetic, high-resolution honor card with an instant download button."""
+    rows_html = ""
+    medals = ["🥇", "🥈", "🥉", "⭐", "⭐", "⭐"]
+    colors = ["#F59E0B", "#64748B", "#B45309", "#4F46E5", "#4F46E5", "#4F46E5"]
+    
+    for i, w in enumerate(winners_list):
+        medal = medals[i] if i < len(medals) else "⭐"
+        color = colors[i] if i < len(colors) else "#4F46E5"
+        rows_html += f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; background:#FFFFFF; padding:10px 16px; border-radius:10px; margin-bottom:8px; box-shadow:0 2px 4px rgba(0,0,0,0.04); border-right: 5px solid {color};">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span style="font-size:1.4rem;">{medal}</span>
+                <span style="font-size:1.1rem; font-weight:800; color:#1E293B;">{w['name']}</span>
+            </div>
+            <div style="background:{color}; color:white; padding:4px 12px; border-radius:15px; font-weight:bold; font-size:0.95rem;">
+                {w['score']}% ({w['marks']})
+            </div>
+        </div>
+        """
+        
+    widget_html = f"""
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <div style="text-align: center; margin-bottom: 15px;">
+        <button onclick="downloadHonorCard()" style="background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 10px rgba(37,99,235,0.3); display: inline-flex; align-items: center; gap: 8px;">
+            📸 حفظ لوحة الشرف كصورة للواتساب (Download Image)
+        </button>
+    </div>
+    <div id="honor-certificate-card" style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 50%, #3B82F6 100%); padding: 25px; border-radius: 16px; color: white; font-family: sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 3px solid #FCD34D; max-width: 650px; margin: 0 auto;">
+        <div style="text-align: center; border-bottom: 2px dashed rgba(255,255,255,0.3); padding-bottom: 15px; margin-bottom: 18px;">
+            <div style="font-size: 1.8rem; margin-bottom: 4px;">🏆 <b>HONOR ROLL & TOP ACHIEVERS</b> 🏆</div>
+            <div style="font-size: 1.25rem; font-weight: 700; color: #FEF08A;">لوحة شرف المتفوقين — Mrs. Kheffa Eletreby</div>
+            <div style="font-size: 1rem; color: #DBEAFE; margin-top: 5px;">📚 <b>{grade_name}</b> | 📝 {exam_name}</div>
+        </div>
+        <div>
+            {rows_html}
+        </div>
+        <div style="text-align: center; margin-top: 18px; font-size: 0.95rem; color: #FEF08A; font-weight: 700; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 10px;">
+            🌟 ألف مبروك لأبطالنا المتميزين مع أطيب أمنياتي بدوام التفوق والنجاح! 🌟
+        </div>
+    </div>
+    <script>
+    function downloadHonorCard() {{
+        var card = document.getElementById("honor-certificate-card");
+        html2canvas(card, {{ scale: 2 }}).then(function(canvas) {{
+            var link = document.createElement('a');
+            link.download = 'Honor_Roll_{grade_name.split(' ')[0]}.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }});
+    }}
+    </script>
+    """
+    st.components.v1.html(widget_html, height=len(winners_list) * 65 + 240)
+
 def parse_text_locally(text):
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     questions = []
@@ -348,7 +395,6 @@ active_exam = None
 active_exam_key = ""
 exam_number_display = ""
 
-# 1. Direct Quiz ID Parameter (?quiz=...)
 quiz_id_param = query_params.get("quiz", None)
 if quiz_id_param:
     for gr_name, exams_dict in exam_bank.items():
@@ -361,7 +407,6 @@ if quiz_id_param:
                 exam_number_display = f"الاختبار رقم ({keys_list.index(quiz_id_param) + 1})"
             break
 
-# 2. Grade Parameter with Exam Number (?g=3&exam=1)
 if not active_exam:
     g_param = query_params.get("g", query_params.get("grade", None))
     exam_num_param = query_params.get("exam", None)
@@ -582,17 +627,16 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مفهرسة ومفصولة لكل صف دراسي.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم بنظام لوحات الشرف المصورة.")
         
-        tab_reports, tab_bank, tab_new = st.tabs(["📊 كشوف درجات كل مرحلة", "📚 استعراض بنك الاختبارات", "➕ إضافة اختبار جديد لصف"])
+        tab_reports, tab_bank, tab_new = st.tabs(["📊 كشوف الدرجات ولوحة الشرف", "📚 استعراض بنك الاختبارات", "➕ إضافة اختبار جديد لصف"])
         
-        # TAB 1: REPORTS (FILTERED BY GRADE & EXAM WITH HONOR ROLL)
+        # TAB 1: REPORTS WITH VISUAL HONOR ROLL CARD
         with tab_reports:
             st.markdown("### 📊 كشوف الدرجات ولوحة الشرف")
             subs = load_submissions()
             
             if subs:
-                # 1. Filter by Grade
                 c_sel_gr, c_sel_ex = st.columns([1.5, 2])
                 filter_grade = c_sel_gr.selectbox(
                     "اختر الصف الدراسي المطلوب:",
@@ -600,7 +644,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     key="report_grade_filter"
                 )
                 
-                # Build dataframe from submissions
                 records = []
                 for _, s_data in subs.items():
                     records.append({
@@ -615,49 +658,60 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     })
                 df_all = pd.DataFrame(records)
                 
-                # Filter rows
                 if filter_grade != "-- جميع المراحل معاً --":
                     df_filtered = df_all[df_all["الصف الدراسي"] == filter_grade]
                 else:
                     df_filtered = df_all
                     
-                # 2. Filter by Specific Exam within Grade
                 available_exams = list(df_filtered["عنوان الاختبار"].unique())
+                chosen_exam_title = "-- جميع اختبارات هذا الصف --"
+                
                 if len(available_exams) > 1:
                     filter_exam = c_sel_ex.selectbox(
                         "تصفية باختبار محدد:",
                         ["-- جميع اختبارات هذا الصف --"] + available_exams,
                         key="report_exam_filter"
                     )
+                    chosen_exam_title = filter_exam
                     if filter_exam != "-- جميع اختبارات هذا الصف --":
                         df_filtered = df_filtered[df_filtered["عنوان الاختبار"] == filter_exam]
                 else:
                     c_sel_ex.info("كل الاختبارات معروضة")
+                    if len(available_exams) == 1:
+                        chosen_exam_title = available_exams[0]
                 
-                # Sort descending by Percentage and Score
                 df_filtered = df_filtered.sort_values(by=["النسبة", "الدرجة"], ascending=[False, False])
                 
-                # 3. Honor Roll / Top Students Display
+                # --- VISUAL HONOR CARD GENERATOR ---
                 if not df_filtered.empty:
-                    top_score = df_filtered["النسبة"].max()
-                    top_students = df_filtered[df_filtered["النسبة"] == top_score]
-                    top_names = ", ".join(top_students["اسم الطالب"].tolist())
+                    # Top achievers (e.g. >= 85% or top 5 students)
+                    top_threshold = df_filtered["النسبة"].max()
+                    top_students_df = df_filtered[df_filtered["النسبة"] >= min(85.0, top_threshold)].head(8)
                     
-                    st.markdown(f"""
-                    <div class="top-students-box">
-                        <span style="font-size:1.15rem; font-weight:bold;">🏆 لوحة شرف المتفوقين ({filter_grade if filter_grade != "-- جميع المراحل معاً --" else "العامة"}):</span><br>
-                        🥇 <b>المركز الأول (الدرجة: {top_score}%):</b> {top_names}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    winners = []
+                    for _, r in top_students_df.iterrows():
+                        winners.append({
+                            "name": r["اسم الطالب"],
+                            "score": r["النسبة"],
+                            "marks": f"{r['الدرجة']}/{r['المجموع']}"
+                        })
                     
-                    # Display formatted table
+                    if winners:
+                        render_honor_card_widget(
+                            filter_grade if filter_grade != "-- جميع المراحل معاً --" else "All Grades",
+                            chosen_exam_title,
+                            winners
+                        )
+                    
+                    st.write("---")
+                    st.markdown("#### 📋 جدول تفريغ الدرجات الكامل:")
+                    
                     df_display = df_filtered.copy()
                     df_display["النسبة المئوية"] = df_display["النسبة"].apply(lambda x: f"{x}%")
                     df_display = df_display.drop(columns=["النسبة"])
                     
                     st.dataframe(df_display, use_container_width=True)
                     
-                    # Export button for this grade only
                     clean_gr_filename = filter_grade.split(' ')[0] if filter_grade != "-- جميع المراحل معاً --" else "All_Grades"
                     csv_data = df_filtered.to_csv(index=False).encode('utf-8-sig')
                     
@@ -672,7 +726,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
 
-        # TAB 2: BROWSE BY SINGLE GRADE ONLY
+        # TAB 2: BROWSE EXAM BANK
         with tab_bank:
             st.markdown("### 🔍 اختاري الصف الدراسي المطلوب:")
             selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
