@@ -36,6 +36,14 @@ st.markdown("""
         margin: 15px 0;
         color: #1E3A8A;
     }
+    .top-students-box {
+        background: linear-gradient(135deg, #FEF9C3, #FEF08A);
+        border: 2px solid #EAB308;
+        border-radius: 10px;
+        padding: 14px;
+        margin-bottom: 15px;
+        color: #854D0E;
+    }
     .card-active {
         background: #F0FDF4;
         border: 2.5px solid #22C55E;
@@ -188,12 +196,13 @@ def clean_text_for_grading(text):
     text = text.lower()
     return " ".join(text.split())
 
-def record_submission(exam_key, student_name, student_phone, student_grade, score, total, percentage):
+def record_submission(exam_key, exam_title, student_name, student_phone, student_grade, score, total, percentage):
     submissions = load_submissions()
     clean_phone = re.sub(r'\D', '', student_phone)
     record_id = f"{exam_key}_{clean_phone}" if clean_phone else f"{exam_key}_{clean_text_for_grading(student_name)}"
     submissions[record_id] = {
         "exam_key": exam_key,
+        "exam_title": exam_title,
         "full_name": student_name.strip(),
         "phone": student_phone.strip(),
         "grade": student_grade.strip(),
@@ -329,7 +338,7 @@ def parse_text_locally(text):
         i += 1
     return questions
 
-# --- ROBUST EXAM LOCATOR (Supports ?g=4&exam=1 or ?quiz=...) ---
+# --- ROBUST EXAM LOCATOR ---
 exam_bank = load_exam_bank()
 active_grades_map = load_active_grades()
 query_params = st.query_params
@@ -369,7 +378,6 @@ if not active_exam:
     if resolved_grade and resolved_grade in exam_bank:
         grade_exams_list = list(exam_bank[resolved_grade].items())
         
-        # Check if an explicit exam number is requested in the URL (e.g., &exam=1)
         if exam_num_param and str(exam_num_param).isdigit():
             idx_req = int(exam_num_param) - 1
             if 0 <= idx_req < len(grade_exams_list):
@@ -377,7 +385,6 @@ if not active_exam:
                 active_exam_key = f"{resolved_grade}_{target_eid}"
                 exam_number_display = f"الاختبار رقم ({exam_num_param})"
                 
-        # If no specific number, fetch the grade's live active exam
         if not active_exam:
             target_eid = active_grades_map.get(resolved_grade)
             if target_eid and target_eid in exam_bank[resolved_grade]:
@@ -526,7 +533,8 @@ if active_exam and active_exam.get("questions"):
             user_answers = st.session_state.get('submitted_answers', {})
             current_time_str = get_current_12hr_time()
             
-            breakdown_text = f"*Exam:* {exam_number_display} - {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {active_student}\n*Grade:* {resolved_grade}\n*Phone:* {active_phone}\n*Time:* {current_time_str}\n"
+            full_exam_desc = f"{exam_number_display} - {meta_tag}{q_title}".strip()
+            breakdown_text = f"*Exam:* {full_exam_desc}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {active_student}\n*Grade:* {resolved_grade}\n*Phone:* {active_phone}\n*Time:* {current_time_str}\n"
             
             for idx, q in enumerate(questions):
                 q_type = q.get('type', 'mcq')
@@ -553,7 +561,7 @@ if active_exam and active_exam.get("questions"):
             st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
             breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
             
-            record_submission(active_exam_key, active_student, active_phone, resolved_grade, score, total, percentage)
+            record_submission(active_exam_key, full_exam_desc, active_student, active_phone, resolved_grade, score, total, percentage)
             
             teacher_phone = "201090570624"
             whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(breakdown_text)}"
@@ -574,11 +582,97 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم بنظام الوقت 12 ساعة والروابط المرقمة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مفهرسة ومفصولة لكل صف دراسي.")
         
-        tab_bank, tab_new, tab_reports = st.tabs(["📚 استعراض كشف امتحانات صف معين", "➕ إضافة اختبار جديد لصف", "📊 كشوف الدرجات"])
+        tab_reports, tab_bank, tab_new = st.tabs(["📊 كشوف درجات كل مرحلة", "📚 استعراض بنك الاختبارات", "➕ إضافة اختبار جديد لصف"])
         
-        # TAB 1: BROWSE BY SINGLE GRADE ONLY
+        # TAB 1: REPORTS (FILTERED BY GRADE & EXAM WITH HONOR ROLL)
+        with tab_reports:
+            st.markdown("### 📊 كشوف الدرجات ولوحة الشرف")
+            subs = load_submissions()
+            
+            if subs:
+                # 1. Filter by Grade
+                c_sel_gr, c_sel_ex = st.columns([1.5, 2])
+                filter_grade = c_sel_gr.selectbox(
+                    "اختر الصف الدراسي المطلوب:",
+                    ["-- جميع المراحل معاً --"] + GRADES_LIST,
+                    key="report_grade_filter"
+                )
+                
+                # Build dataframe from submissions
+                records = []
+                for _, s_data in subs.items():
+                    records.append({
+                        "اسم الطالب": s_data.get('full_name', ''),
+                        "الصف الدراسي": s_data.get('grade', ''),
+                        "رقم الهاتف": s_data.get('phone', ''),
+                        "عنوان الاختبار": s_data.get('exam_title', s_data.get('exam_key', '')),
+                        "الدرجة": s_data.get('score', 0),
+                        "المجموع": s_data.get('total', 0),
+                        "النسبة": s_data.get('percentage', 0),
+                        "وقت التسليم": format_to_12hr(s_data.get('timestamp', ''))
+                    })
+                df_all = pd.DataFrame(records)
+                
+                # Filter rows
+                if filter_grade != "-- جميع المراحل معاً --":
+                    df_filtered = df_all[df_all["الصف الدراسي"] == filter_grade]
+                else:
+                    df_filtered = df_all
+                    
+                # 2. Filter by Specific Exam within Grade
+                available_exams = list(df_filtered["عنوان الاختبار"].unique())
+                if len(available_exams) > 1:
+                    filter_exam = c_sel_ex.selectbox(
+                        "تصفية باختبار محدد:",
+                        ["-- جميع اختبارات هذا الصف --"] + available_exams,
+                        key="report_exam_filter"
+                    )
+                    if filter_exam != "-- جميع اختبارات هذا الصف --":
+                        df_filtered = df_filtered[df_filtered["عنوان الاختبار"] == filter_exam]
+                else:
+                    c_sel_ex.info("كل الاختبارات معروضة")
+                
+                # Sort descending by Percentage and Score
+                df_filtered = df_filtered.sort_values(by=["النسبة", "الدرجة"], ascending=[False, False])
+                
+                # 3. Honor Roll / Top Students Display
+                if not df_filtered.empty:
+                    top_score = df_filtered["النسبة"].max()
+                    top_students = df_filtered[df_filtered["النسبة"] == top_score]
+                    top_names = ", ".join(top_students["اسم الطالب"].tolist())
+                    
+                    st.markdown(f"""
+                    <div class="top-students-box">
+                        <span style="font-size:1.15rem; font-weight:bold;">🏆 لوحة شرف المتفوقين ({filter_grade if filter_grade != "-- جميع المراحل معاً --" else "العامة"}):</span><br>
+                        🥇 <b>المركز الأول (الدرجة: {top_score}%):</b> {top_names}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Display formatted table
+                    df_display = df_filtered.copy()
+                    df_display["النسبة المئوية"] = df_display["النسبة"].apply(lambda x: f"{x}%")
+                    df_display = df_display.drop(columns=["النسبة"])
+                    
+                    st.dataframe(df_display, use_container_width=True)
+                    
+                    # Export button for this grade only
+                    clean_gr_filename = filter_grade.split(' ')[0] if filter_grade != "-- جميع المراحل معاً --" else "All_Grades"
+                    csv_data = df_filtered.to_csv(index=False).encode('utf-8-sig')
+                    
+                    st.download_button(
+                        label=f"📥 تحميل كشف درجات ({clean_gr_filename}) بصيغة Excel / CSV",
+                        data=csv_data,
+                        file_name=f"Grades_{clean_gr_filename}_{datetime.now().strftime('%Y%m%d_%I%M%p')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.info(f"لا توجد نتائج مسجلة لصف {filter_grade} حتى الآن.")
+            else:
+                st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
+
+        # TAB 2: BROWSE BY SINGLE GRADE ONLY
         with tab_bank:
             st.markdown("### 🔍 اختاري الصف الدراسي المطلوب:")
             selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
@@ -600,7 +694,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 <h4 style="margin:0; color:#1E40AF;">📁 مجلد: {selected_manage_grade}</h4>
                 <div style="margin-top:6px; font-size:0.95rem;">
                     🟢 <b>الامتحان المفتوح للطلاب حالياً:</b> <span style="color:#15803D; font-weight:bold;">{live_txt}</span><br>
-                    🔗 <b>رابط الجروب العام (يفتح الامتحان النشط):</b> <code>{group_link}</code>
+                    🔗 <b>رابط الجروب العام:</b> <code>{group_link}</code>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -609,7 +703,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 st.markdown(f"**سجل اختبارات هذا الصف مرتبة ومؤرخة بالروابط المرقمة ({len(grade_exams)} اختبارات):**")
                 
                 exam_items = list(grade_exams.items())
-                
                 for idx, (e_id, e_info) in enumerate(exam_items, 1):
                     is_current = (e_id == active_id)
                     u_lbl = e_info.get('unit', '')
@@ -618,12 +711,10 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     num_q = len(e_info.get('questions', []))
                     
                     cr_date_12hr = format_to_12hr(e_info.get('created_at', ''))
-                    
-                    # Direct, Human-Readable Numbered Grade URL
                     numbered_quiz_url = f"https://mrs-kheffa-quiz.streamlit.app/?g={sc_code}&exam={idx}"
                     
                     card_class = "card-active" if is_current else "card-idle"
-                    badge_html = '<span class="badge-active">🟢 شغال للطلبة الآن على رابط الجروب</span>' if is_current else '<span class="badge-idle">⏸️ محفوظ في الأرشيف</span>'
+                    badge_html = '<span class="badge-active">🟢 شغال للطلبة الآن</span>' if is_current else '<span class="badge-idle">⏸️ محفوظ في الأرشيف</span>'
                     
                     st.markdown(f"""
                     <div class="{card_class}">
@@ -659,7 +750,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
 
-        # TAB 2: ADD NEW EXAM
+        # TAB 3: ADD NEW EXAM
         with tab_new:
             st.markdown("#### 📝 تجهيز وحفظ اختبار جديد")
             c_g, c_u, c_l = st.columns([2, 1, 1])
@@ -703,33 +794,5 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         st.error("يرجى التأكد من كتابة الأسئلة بالتنسيق المطلوب.")
                 else:
                     st.error("يرجى لصق نص الأسئلة أولاً.")
-
-        # TAB 3: REPORTS
-        with tab_reports:
-            subs = load_submissions()
-            if subs:
-                df_data = []
-                for _, s_data in subs.items():
-                    df_data.append({
-                        "اسم الطالب": s_data.get('full_name', ''),
-                        "الصف الدراسي": s_data.get('grade', ''),
-                        "رقم الهاتف": s_data.get('phone', ''),
-                        "الدرجة": s_data.get('score', 0),
-                        "المجموع": s_data.get('total', 0),
-                        "النسبة": f"{s_data.get('percentage', 0)}%",
-                        "وقت التسليم": format_to_12hr(s_data.get('timestamp', ''))
-                    })
-                df = pd.DataFrame(df_data)
-                st.dataframe(df, use_container_width=True)
-                
-                csv_data = df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button(
-                    label="📥 تحميل كشف الدرجات الكامل (Excel / CSV)",
-                    data=csv_data,
-                    file_name=f"All_Grades_{datetime.now().strftime('%Y%m%d_%I%M%p')}.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.info("لا توجد نتائج مسجلة حتى الآن.")
     elif admin_pass:
         st.error("Incorrect password!")
