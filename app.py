@@ -122,6 +122,10 @@ GRADES_MAP = {
 
 GRADES_LIST = list(GRADES_MAP.values())
 
+def get_current_12hr_time():
+    """Returns readable date and time in 12-hour AM/PM format."""
+    return datetime.now().strftime("%Y-%m-%d %I:%M %p")
+
 def load_exam_bank():
     if os.path.exists(EXAM_BANK_FILE):
         try:
@@ -178,7 +182,7 @@ def record_submission(exam_key, student_name, student_phone, student_grade, scor
         "score": score,
         "total": total,
         "percentage": percentage,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "timestamp": get_current_12hr_time()
     }
     with open(SUBMISSIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(submissions, f, ensure_ascii=False, indent=2)
@@ -396,7 +400,7 @@ if active_exam and active_exam.get("questions"):
                     st.info(f"🏆 **درجتك المسجلة:** {prev['score']} / {prev['total']} ({prev['percentage']}%)")
                     
                     teacher_phone = "201090570624"
-                    wa_msg = f"*Exam:* {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {prev['full_name']}\n*Grade:* {resolved_grade}\n*Phone:* {prev.get('phone', '')}\n*Recorded Score:* {prev['score']}/{prev['total']} ({prev['percentage']}%)"
+                    wa_msg = f"*Exam:* {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {prev['full_name']}\n*Grade:* {resolved_grade}\n*Phone:* {prev.get('phone', '')}\n*Recorded Score:* {prev['score']}/{prev['total']} ({prev['percentage']}%)\n*Time:* {prev.get('timestamp', '')}"
                     whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(wa_msg)}"
                     
                     st.markdown(f"""
@@ -482,8 +486,9 @@ if active_exam and active_exam.get("questions"):
             score = 0
             total = len(questions)
             user_answers = st.session_state.get('submitted_answers', {})
+            current_time_str = get_current_12hr_time()
             
-            breakdown_text = f"*Exam:* {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {active_student}\n*Grade:* {resolved_grade}\n*Phone:* {active_phone}\n"
+            breakdown_text = f"*Exam:* {meta_tag}{q_title}\n*Teacher:* Mrs. Kheffa Eletreby\n*Student:* {active_student}\n*Grade:* {resolved_grade}\n*Phone:* {active_phone}\n*Time:* {current_time_str}\n"
             
             for idx, q in enumerate(questions):
                 q_type = q.get('type', 'mcq')
@@ -531,7 +536,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مرقمة ومؤرخة بالترتيب لكل صف دراسي.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم بنظام الوقت 12 ساعة (AM / PM).")
         
         tab_bank, tab_new, tab_reports = st.tabs(["📚 استعراض كشف امتحانات صف معين", "➕ إضافة اختبار جديد لصف", "📊 كشوف الدرجات"])
         
@@ -551,7 +556,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             active_id = active_map.get(selected_manage_grade, list(grade_exams.keys())[-1] if grade_exams else "")
             active_obj = grade_exams.get(active_id)
             
-            # Focused Header for this Grade
             live_txt = f"[{active_obj.get('unit','')} - {active_obj.get('lesson','')}] {active_obj.get('title','')}" if active_obj else "لا يوجد اختبار نشط حالياً"
             st.markdown(f"""
             <div class="grade-focus-header">
@@ -566,7 +570,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             if grade_exams:
                 st.markdown(f"**سجل اختبارات هذا الصف مرتبة ومؤرخة ({len(grade_exams)} اختبارات):**")
                 
-                # Sort and index tests explicitly (Test 1, Test 2, Test 3...)
                 exam_items = list(grade_exams.items())
                 
                 for idx, (e_id, e_info) in enumerate(exam_items, 1):
@@ -586,7 +589,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     <div class="{card_class}">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
                             <span style="font-size:1.25rem; font-weight:800; color:#1E3A8A;">
-                                📝 الاختبار ({idx}) &nbsp;—&nbsp; 📅 {cr_date}
+                                📝 الاختبار ({idx}) &nbsp;—&nbsp; 🕒 {cr_date}
                             </span>
                             {badge_html}
                         </div>
@@ -646,7 +649,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             "lesson": quiz_lesson.strip(),
                             "grade": sel_grade,
                             "questions": parsed,
-                            "created_at": datetime.now().strftime("%Y-%m-%d")
+                            "created_at": get_current_12hr_time()
                         }
                         save_exam_bank(bank)
                         
@@ -683,7 +686,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 st.download_button(
                     label="📥 تحميل كشف الدرجات الكامل (Excel / CSV)",
                     data=csv_data,
-                    file_name=f"All_Grades_{datetime.now().strftime('%Y%m%d')}.csv",
+                    file_name=f"All_Grades_{datetime.now().strftime('%Y%m%d_%I%M%p')}.csv",
                     mime="text/csv"
                 )
             else:
