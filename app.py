@@ -144,20 +144,26 @@ def clean_time_display(date_str):
     if not date_str:
         return ""
     date_str = str(date_str).strip()
-    
-    # If already in standard 12-hr format, return clean
     if "|" in date_str and ("AM" in date_str or "PM" in date_str):
         return date_str
-        
-    # If it was an old legacy 24-hr format (e.g., 15:57 30-08-2026), shift to Egypt
     for p in ["%H:%M %d-%m-%Y", "%d-%m-%Y %H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"]:
         try:
             dt = datetime.strptime(date_str, p)
             return (dt + timedelta(hours=3)).strftime("%Y-%m-%d | %I:%M %p")
         except ValueError:
             continue
-            
     return date_str
+
+def extract_date_obj(date_str):
+    """Extracts a date object for weekly grouping."""
+    if not date_str:
+        return None
+    cleaned = clean_time_display(date_str)
+    try:
+        raw_d = cleaned.split("|")[0].strip()
+        return datetime.strptime(raw_d, "%Y-%m-%d").date()
+    except Exception:
+        return None
 
 def load_exam_bank():
     if os.path.exists(EXAM_BANK_FILE):
@@ -241,10 +247,10 @@ def render_speech_player(text_to_read):
     """
     st.components.v1.html(audio_html, height=60)
 
-def render_honor_card_widget(grade_name, exam_name, winners_list):
+def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor-certificate-card"):
     rows_html = ""
-    medals = ["🥇", "🥈", "🥉", "⭐", "⭐", "⭐", "⭐", "⭐"]
-    colors = ["#F59E0B", "#64748B", "#B45309", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5"]
+    medals = ["🥇", "🥈", "🥉", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐"]
+    colors = ["#F59E0B", "#64748B", "#B45309", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5"]
     
     for i, w in enumerate(winners_list):
         medal = medals[i] if i < len(medals) else "⭐"
@@ -268,11 +274,11 @@ def render_honor_card_widget(grade_name, exam_name, winners_list):
     widget_html = f"""
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <div style="text-align: center; margin-bottom: 15px;">
-        <button onclick="downloadHonorCard()" style="background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 10px rgba(37,99,235,0.3); display: inline-flex; align-items: center; gap: 8px;">
+        <button onclick="downloadCard_{card_id}()" style="background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 10px rgba(37,99,235,0.3); display: inline-flex; align-items: center; gap: 8px;">
             📸 حفظ لوحة الشرف كصورة للواتساب (Download Image)
         </button>
     </div>
-    <div id="honor-certificate-card" style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 50%, #3B82F6 100%); padding: 25px; border-radius: 16px; color: white; font-family: sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 3px solid #FCD34D; max-width: 680px; margin: 0 auto;">
+    <div id="{card_id}" style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 50%, #3B82F6 100%); padding: 25px; border-radius: 16px; color: white; font-family: sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 3px solid #FCD34D; max-width: 680px; margin: 0 auto;">
         <div style="text-align: center; border-bottom: 2px dashed rgba(255,255,255,0.3); padding-bottom: 15px; margin-bottom: 18px;">
             <div style="font-size: 1.8rem; margin-bottom: 4px;">🏆 <b>HONOR ROLL & TOP ACHIEVERS</b> 🏆</div>
             <div style="font-size: 1.25rem; font-weight: 700; color: #FEF08A;">لوحة شرف المتفوقين — Mrs. Kheffa Eletreby</div>
@@ -286,8 +292,8 @@ def render_honor_card_widget(grade_name, exam_name, winners_list):
         </div>
     </div>
     <script>
-    function downloadHonorCard() {{
-        var card = document.getElementById("honor-certificate-card");
+    function downloadCard_{card_id}() {{
+        var card = document.getElementById("{card_id}");
         html2canvas(card, {{ scale: 2 }}).then(function(canvas) {{
             var link = document.createElement('a');
             link.download = 'Honor_Roll_{grade_name.split(' ')[0]}.png';
@@ -647,12 +653,103 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم بتوقيت مصر الدقيق ومسميات الصفوف البارزة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة بنظام أرشيف الأسابيع وكشوف الدرجات.")
         
-        tab_reports, tab_bank, tab_new = st.tabs(["📊 كشوف الدرجات ولوحة الشرف", "📚 استعراض بنك الاختبارات", "➕ إضافة اختبار جديد لصف"])
+        tab_weekly, tab_reports, tab_bank, tab_new = st.tabs([
+            "🏆 أرشيف أوائل الأسابيع (Weekly Honor)", 
+            "📊 كشوف الدرجات العامة", 
+            "📚 استعراض بنك الاختبارات", 
+            "➕ إضافة اختبار جديد لصف"
+        ])
         
+        # TAB 1: WEEKLY HONOR ROLL & ARCHIVE
+        with tab_weekly:
+            st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع (Weekly Honor Roll)")
+            subs = load_submissions()
+            
+            if subs:
+                records = []
+                for _, s_data in subs.items():
+                    d_obj = extract_date_obj(s_data.get('timestamp', ''))
+                    # Calculate calendar week label
+                    if d_obj:
+                        year, week_num, _ = d_obj.isocalendar()
+                        week_label = f"Week {week_num} ({year})"
+                    else:
+                        week_label = "Unassigned"
+                        
+                    records.append({
+                        "اسم الطالب": s_data.get('full_name', ''),
+                        "الصف الدراسي": s_data.get('grade', ''),
+                        "رقم الهاتف": s_data.get('phone', ''),
+                        "عنوان الاختبار": s_data.get('exam_title', s_data.get('exam_key', '')),
+                        "الدرجة": s_data.get('score', 0),
+                        "المجموع": s_data.get('total', 0),
+                        "النسبة": s_data.get('percentage', 0),
+                        "وقت التسليم": clean_time_display(s_data.get('timestamp', '')),
+                        "date_obj": d_obj,
+                        "week_label": week_label
+                    })
+                df_weekly_all = pd.DataFrame(records)
+                
+                # Get available weeks sorted descending
+                unique_weeks = sorted(list(df_weekly_all["week_label"].unique()), reverse=True)
+                
+                c_w1, c_w2 = st.columns([2, 1])
+                chosen_week = c_w1.selectbox("📅 اختاري الأسبوع المطلوب عرضه:", unique_weeks, key="sel_honor_week")
+                filter_wk_grade = c_w2.selectbox("المرحلة:", ["جميع المراحل"] + GRADES_LIST, key="sel_honor_wk_grade")
+                
+                df_selected_week = df_weekly_all[df_weekly_all["week_label"] == chosen_week]
+                if filter_wk_grade != "جميع المراحل":
+                    df_selected_week = df_selected_week[df_selected_week["الصف الدراسي"] == filter_wk_grade]
+                    
+                df_selected_week = df_selected_week.sort_values(by=["النسبة", "الدرجة"], ascending=[False, False])
+                
+                if not df_selected_week.empty:
+                    top_score_wk = df_selected_week["النسبة"].max()
+                    top_wk_df = df_selected_week[df_selected_week["النسبة"] >= min(85.0, top_score_wk)].head(10)
+                    
+                    wk_winners = []
+                    for _, r in top_wk_df.iterrows():
+                        wk_winners.append({
+                            "name": r["اسم الطالب"],
+                            "grade": r["الصف الدراسي"],
+                            "score": r["النسبة"],
+                            "marks": f"{r['الدرجة']}/{r['المجموع']}"
+                        })
+                    
+                    if wk_winners:
+                        render_honor_card_widget(
+                            f"🏆 أوائل {chosen_week} - {filter_wk_grade}",
+                            "أبطال التميز للأسبوع",
+                            wk_winners,
+                            card_id="weekly-honor-card"
+                        )
+                    
+                    st.write("---")
+                    st.markdown(f"#### 📋 كشف المتفوقين المسجل لـ ({chosen_week}):")
+                    
+                    df_wk_display = df_selected_week.copy()
+                    df_wk_display["النسبة المئوية"] = df_wk_display["النسبة"].apply(lambda x: f"{x}%")
+                    df_wk_display = df_wk_display.drop(columns=["النسبة", "date_obj", "week_label"])
+                    
+                    st.dataframe(df_wk_display, use_container_width=True)
+                    
+                    csv_wk_data = df_selected_week.drop(columns=["date_obj"]).to_csv(index=False).encode('utf-8-sig')
+                    st.download_button(
+                        label=f"📥 تحميل شيت أوائل ({chosen_week}.csv)",
+                        data=csv_wk_data,
+                        file_name=f"Top_Achievers_{chosen_week.replace(' ', '_')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.info(f"لا توجد نتائج مسجلة لـ {chosen_week}.")
+            else:
+                st.info("لا توجد تسليمات مسجلة لتوليد لوحة شرف الأسابيع بعد.")
+
+        # TAB 2: GENERAL REPORTS (FILTERED BY GRADE & EXAM)
         with tab_reports:
-            st.markdown("### 📊 كشوف الدرجات ولوحة الشرف")
+            st.markdown("### 📊 كشوف الدرجات العامة وتصفية الاختبارات")
             subs = load_submissions()
             
             if subs:
@@ -718,7 +815,8 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         render_honor_card_widget(
                             filter_grade if filter_grade != "-- جميع المراحل معاً --" else "All Grades (جميع المراحل)",
                             chosen_exam_title,
-                            winners
+                            winners,
+                            card_id="general-honor-card"
                         )
                     
                     st.write("---")
@@ -744,6 +842,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
 
+        # TAB 3: BROWSE EXAM BANK
         with tab_bank:
             st.markdown("### 🔍 اختاري الصف الدراسي المطلوب:")
             selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
@@ -822,6 +921,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
 
+        # TAB 4: ADD NEW EXAM
         with tab_new:
             st.markdown("#### 📝 تجهيز وحفظ اختبار جديد")
             c_g, c_u, c_l = st.columns([2, 1, 1])
@@ -859,7 +959,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             set_active_exam_for_grade(sel_grade, exam_id)
                             st.success(f"🎉 تم حفظ وتفعيل '{quiz_title}' لصف {sel_grade} فوراً بتوقيت مصر!")
                         else:
-                            st.success(f"📁 تم حفظ '{quiz_title}' في مجلد {sel_grade} كأرشيف للأسبوع القادم!")
+                            st.success(f"📁 تم حفظ '{quiz_title}' في مجلد {sel_grade} بنجاح كأرشيف للأسبوع القادم!")
                         st.rerun()
                     else:
                         st.error("يرجى التأكد من كتابة الأسئلة بالتنسيق المطلوب.")
