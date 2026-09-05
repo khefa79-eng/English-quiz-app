@@ -121,13 +121,18 @@ EXAM_BANK_FILE = "exam_bank.json"
 ACTIVE_GRADES_FILE = "active_by_grade.json"
 SUBMISSIONS_FILE = "submitted_students.json"
 
+# Expanded Grades Map with Clear Distinction between Connect (Regular) and Connect Plus (Plus)
 GRADES_MAP = {
-    "1": "Primary 1 (أولى ابتدائي)",
-    "2": "Primary 2 (تانية ابتدائي)",
-    "3": "Primary 3 (تالتة ابتدائي)",
-    "4": "Primary 4 (رابعة ابتدائي)",
-    "5": "Primary 5 (خامسة ابتدائي)",
-    "6": "Primary 6 (سادسة ابتدائي)",
+    "p1": "Primary 1 - Connect (أولى ابتدائي - عادئ)",
+    "p2": "Primary 2 - Connect (تانية ابتدائي - عادي)",
+    "p3": "Primary 3 - Connect (تالتة ابتدائي - عادي)",
+    "p3_plus": "Primary 3 - Connect Plus (تالتة ابتدائي - بلس)",
+    "p4": "Primary 4 - Connect (رابعة ابتدائي - عادي)",
+    "p4_plus": "Primary 4 - Connect Plus (رابعة ابتدائي - بلس)",
+    "p5": "Primary 5 - Connect (خامسة ابتدائي - عادي)",
+    "p5_plus": "Primary 5 - Connect Plus (خامسة ابتدائي - بلس)",
+    "p6": "Primary 6 - Connect (سادسة ابتدائي - عادي)",
+    "p6_plus": "Primary 6 - Connect Plus (سادسة ابتدائي - بلس)",
     "prep1": "Prep 1 (أولى إعدادي)",
     "prep2": "Prep 2 (تانية إعدادي)",
     "prep3": "Prep 3 (تالتة إعدادي)",
@@ -355,7 +360,7 @@ def parse_text_locally(text):
                     opt_raw = re.sub(r'(?i)^options\s*:\s*', '', lines[i]).strip('[] ')
                     options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
                 elif re.search(r'(?i)^answer\s*:', lines[i]):
-                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
+                    answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip()
                 i += 1
             if premise and options:
                 questions.append({
@@ -390,7 +395,7 @@ def parse_text_locally(text):
             i += 1
             while i < len(lines) and (re.match(r'^[a-dA-D][\.\)]', lines[i]) or re.search(r'(?i)^answer\s*:', lines[i]) or re.search(r'(?i)^options\s*:', lines[i])):
                 if re.search(r'(?i)^answer\s*:', lines[i]):
-                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
+                    answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip()
                 elif re.search(r'(?i)^options\s*:', lines[i]):
                     opt_raw = re.sub(r'(?i)^options\s*:\s*', '', lines[i]).strip('[] ')
                     options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
@@ -490,11 +495,10 @@ if not resolved_grade and not active_exam:
     st.info("يرجى اختيار صفك الدراسي للدخول إلى الاختبار المحدد لك:")
     chosen_g = st.selectbox("اختر الصف الدراسي:", ["-- اختر الصف --"] + GRADES_LIST, key="direct_grade_select")
     if chosen_g != "-- اختر الصف --":
-        if st.button("الانتقال للاختبار 🚀"):
-            for code, name in GRADES_MAP.items():
-                if name == chosen_g:
-                    st.query_params["g"] = code
-                    st.rerun()
+        for code, name in GRADES_MAP.items():
+            if name == chosen_g:
+                st.query_params["g"] = code
+                st.rerun()
 
 # --- STUDENT EXAM VIEW ---
 if active_exam and active_exam.get("questions"):
@@ -670,7 +674,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم بنظام الأسابيع الدراسية المخصصة (Week 1, Week 2...).")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بفصل مناهج Connect العادي عن Connect Plus.")
         
         tab_weekly, tab_reports, tab_bank, tab_new = st.tabs([
             "🏆 أرشيف أوائل الأسابيع (Weekly Honor)", 
@@ -704,7 +708,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     })
                 df_weekly_all = pd.DataFrame(records)
                 
-                # Sort weeks logically (Week 1, Week 2...)
                 weeks_df = df_weekly_all[["week_label", "week_idx"]].drop_duplicates().sort_values(by="week_idx", ascending=False)
                 unique_weeks = weeks_df["week_label"].tolist()
                 
@@ -863,7 +866,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
             
             short_c = [k for k, v in GRADES_MAP.items() if v == selected_manage_grade]
-            sc_code = short_c[0] if short_c else "1"
+            sc_code = short_c[0] if short_c else "p4"
             clean_short_grade = selected_manage_grade.split('(')[0].strip()
             group_link = f"https://mrs-kheffa-quiz.streamlit.app/?g={sc_code}"
             
