@@ -40,7 +40,7 @@ st.markdown("""
         border-radius: 10px;
         padding: 14px 18px;
         margin: 15px 0;
-        color: #1E3A8A;
+        color: #1E40AF;
     }
     .card-active {
         background: #F0FDF4;
@@ -121,7 +121,6 @@ EXAM_BANK_FILE = "exam_bank.json"
 ACTIVE_GRADES_FILE = "active_by_grade.json"
 SUBMISSIONS_FILE = "submitted_students.json"
 
-# Expanded Grades Map with Clear Distinction between Connect (Regular) and Connect Plus (Plus)
 GRADES_MAP = {
     "p1": "Primary 1 - Connect (أولى ابتدائي - عادئ)",
     "p2": "Primary 2 - Connect (تانية ابتدائي - عادي)",
@@ -138,7 +137,7 @@ GRADES_MAP = {
     "prep3": "Prep 3 (تالتة إعدادي)",
     "sec1": "Secondary 1 (أولى ثانوي)",
     "sec2": "Secondary 2 (تانية ثانوي)",
-    "sec3": "Secondary 3 (تالتة ثانوي)"
+    "sec3": "Secondary 3 (تالثة ثانوي)"
 }
 
 GRADES_LIST = list(GRADES_MAP.values())
@@ -171,19 +170,15 @@ def extract_date_obj(date_str):
         return None
 
 def calculate_custom_academic_week(sub_date):
-    """Calculates Week number starting from Saturday 2026-08-29."""
     if not sub_date:
         return "Week 1 (من 2026-08-29 إلى 2026-09-04)", 1
-        
     days_diff = (sub_date - ACADEMIC_START_DATE).days
     if days_diff < 0:
         week_num = 1
     else:
         week_num = (days_diff // 7) + 1
-        
     start_of_week = ACADEMIC_START_DATE + timedelta(days=(week_num - 1) * 7)
     end_of_week = start_of_week + timedelta(days=6)
-    
     label = f"Week {week_num} (من {start_of_week.strftime('%Y-%m-%d')} إلى {end_of_week.strftime('%Y-%m-%d')})"
     return label, week_num
 
@@ -225,9 +220,12 @@ def load_submissions():
     return {}
 
 def clean_text_for_grading(text):
+    """Extremely robust text cleaning: removes all punctuation, extra spaces, and converts to lowercase."""
     if not text:
         return ""
-    text = text.translate(str.maketrans('', '', string.punctuation + '؟،؛«»ـ“”‘’'))
+    # Remove all punctuation marks, quotes, and arabic/english punctuation
+    punctuation_to_remove = string.punctuation + '؟،؛«»ـ“”‘’'
+    text = text.translate(str.maketrans('', '', punctuation_to_remove))
     text = text.lower()
     return " ".join(text.split())
 
@@ -360,7 +358,7 @@ def parse_text_locally(text):
                     opt_raw = re.sub(r'(?i)^options\s*:\s*', '', lines[i]).strip('[] ')
                     options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
                 elif re.search(r'(?i)^answer\s*:', lines[i]):
-                    answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip()
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
                 i += 1
             if premise and options:
                 questions.append({
@@ -395,7 +393,7 @@ def parse_text_locally(text):
             i += 1
             while i < len(lines) and (re.match(r'^[a-dA-D][\.\)]', lines[i]) or re.search(r'(?i)^answer\s*:', lines[i]) or re.search(r'(?i)^options\s*:', lines[i])):
                 if re.search(r'(?i)^answer\s*:', lines[i]):
-                    answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip()
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
                 elif re.search(r'(?i)^options\s*:', lines[i]):
                     opt_raw = re.sub(r'(?i)^options\s*:\s*', '', lines[i]).strip('[] ')
                     options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
@@ -560,7 +558,7 @@ if active_exam and active_exam.get("questions"):
             
             with st.form("interactive_exam_form"):
                 user_answers = {}
-                displayed_passages = set()
+                graphic_passages = set()
                 displayed_boxes = set()
                 
                 for idx, q in enumerate(questions):
@@ -569,7 +567,7 @@ if active_exam and active_exam.get("questions"):
                     
                     if q_type == "reading" and "passage" in q:
                         pass_text = q['passage']
-                        if pass_text not in displayed_passages:
+                        if pass_text not in graphic_passages:
                             st.markdown(f"""
                             <div class="passage-box">
                                 📖 <b>Read the text / اقرأ النص التالي:</b><br><br>
@@ -577,7 +575,7 @@ if active_exam and active_exam.get("questions"):
                             </div>
                             """, unsafe_allow_html=True)
                             render_speech_player(pass_text)
-                            displayed_passages.add(pass_text)
+                            graphic_passages.add(pass_text)
 
                     if q_type == "box_complete":
                         box_words = q.get('box_words', [])
@@ -632,13 +630,18 @@ if active_exam and active_exam.get("questions"):
                 q_type = q.get('type', 'mcq')
                 ans = user_answers.get(idx, "")
                 correct = q.get('answer', '')
-                is_correct = False
                 
+                # Compare using the robust clean function (ignores spaces, punctuation, lowercase)
+                cleaned_user_ans = clean_text_for_grading(str(ans))
+                cleaned_correct_ans = clean_text_for_grading(str(correct))
+                
+                is_correct = False
                 if q_type in ["reorder", "fill_text", "box_complete"]:
-                    if clean_text_for_grading(str(ans)) == clean_text_for_grading(str(correct)) and ans not in ["-- Select Word --", ""]:
+                    if cleaned_user_ans == cleaned_correct_ans and ans not in ["-- Select Word --", "", None]:
                         is_correct = True
                 else:
-                    if str(ans).strip() == str(correct).strip() and ans not in ["-- Select Match --", None, ""]:
+                    # For MCQ and matching, compare cleaned strings as well to be fully safe
+                    if cleaned_user_ans == cleaned_correct_ans and ans not in ["-- Select Match --", None, ""]:
                         is_correct = True
                         
                 if is_correct:
@@ -674,7 +677,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بفصل مناهج Connect العادي عن Connect Plus.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بتصحيح ذكي يتجاهل علامات الترقيم والمسافات.")
         
         tab_weekly, tab_reports, tab_bank, tab_new = st.tabs([
             "🏆 أرشيف أوائل الأسابيع (Weekly Honor)", 
@@ -951,7 +954,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             raw_text = st.text_area("ألصقي نص الأسئلة المنسقة هنا:", height=180, key="new_raw_text")
             
             col_save_draft, col_save_pub = st.columns([1, 1])
-            save_as_draft = col_save_draft.button("📁 حفظ في الأرشيف فقط (بدون تفعيل حالياً)")
+            save_as_draft = col_save_draft.button("📁 حفظ في الأرشيفط (بدون تفعيل حالياً)")
             save_and_pub = col_save_pub.button("🚀 حفظ وتفعيل للطلاب فوراً")
             
             if save_as_draft or save_and_pub:
@@ -962,7 +965,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         if sel_grade not in bank:
                             bank[sel_grade] = {}
                         
-                        exam_id = f"exam_{int(datetime.now().timestamp())}"
+                        exam_id = f"exam_{int(datetime.now().timestamp())`}"
                         bank[sel_grade][exam_id] = {
                             "title": quiz_title.strip(),
                             "unit": quiz_unit.strip(),
