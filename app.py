@@ -220,10 +220,9 @@ def load_submissions():
     return {}
 
 def clean_text_for_grading(text):
-    """Extremely robust text cleaning: removes all punctuation, extra spaces, and converts to lowercase."""
+    """Completely ignores punctuation, extra spaces, and case sensitivity."""
     if not text:
         return ""
-    # Remove all punctuation marks, quotes, and arabic/english punctuation
     punctuation_to_remove = string.punctuation + '؟،؛«»ـ“”‘’'
     text = text.translate(str.maketrans('', '', punctuation_to_remove))
     text = text.lower()
@@ -355,7 +354,7 @@ def parse_text_locally(text):
             i += 1
             while i < len(lines) and not re.match(r'^\d+[\.\-]', lines[i]) and not re.search(r'(?i)^(passage|box)\s*:', lines[i]):
                 if re.search(r'(?i)^options\s*:', lines[i]):
-                    opt_raw = re.sub(r'(?i)^options\s*:\s*', '', lines[i]).strip('[] ')
+                    opt_raw = re.sub(r'(?i)^options\s*:', '', lines[i]).strip('[] ')
                     options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
                 elif re.search(r'(?i)^answer\s*:', lines[i]):
                     answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
@@ -375,7 +374,7 @@ def parse_text_locally(text):
             answer = ""
             i += 1
             if i < len(lines) and re.search(r'(?i)^answer\s*:', lines[i]):
-                answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
+                answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip()
                 i += 1
             if words:
                 questions.append({
@@ -393,9 +392,9 @@ def parse_text_locally(text):
             i += 1
             while i < len(lines) and (re.match(r'^[a-dA-D][\.\)]', lines[i]) or re.search(r'(?i)^answer\s*:', lines[i]) or re.search(r'(?i)^options\s*:', lines[i])):
                 if re.search(r'(?i)^answer\s*:', lines[i]):
-                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
+                    answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip()
                 elif re.search(r'(?i)^options\s*:', lines[i]):
-                    opt_raw = re.sub(r'(?i)^options\s*:\s*', '', lines[i]).strip('[] ')
+                    opt_raw = re.sub(r'(?i)^options\s*:', '', lines[i]).strip('[] ')
                     options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
                 else:
                     opt_val = re.sub(r'^[a-dA-D][\.\)]\s*', '', lines[i]).strip()
@@ -540,7 +539,7 @@ if active_exam and active_exam.get("questions"):
                     
                     st.markdown(f"""
                         <div style="text-align: center; margin-top: 15px;">
-                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
+                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
                                 📲 Send Score to Mrs. Kheffa on WhatsApp
                             </a>
                         </div>
@@ -589,20 +588,31 @@ if active_exam and active_exam.get("questions"):
                             """, unsafe_allow_html=True)
                             displayed_boxes.add(box_key)
                     
+                    # Enhanced Interactive Inputs (Dropdowns for MCQ & Matching, Multiselect for Reorder)
                     if q_type in ["mcq", "reading"]:
                         st.write(q.get('question', ''))
-                        user_answers[idx] = st.radio("Choose correct answer:", options=q.get('options', []), key=f"ans_mcq_{idx}", index=None)
+                        opt_list = ["-- اختر الإجابة الصحيحة --"] + q.get('options', [])
+                        chosen_opt = st.selectbox("Choose correct answer:", options=opt_list, key=f"ans_mcq_{idx}")
+                        user_answers[idx] = "" if chosen_opt == "-- اختر الإجابة الصحيحة --" else chosen_opt
+                        
                     elif q_type == "box_complete":
                         st.write(q.get('question', ''))
-                        user_answers[idx] = st.selectbox("Select word / اختر الكلمة:", options=["-- Select Word --"] + q.get('box_words', []), key=f"ans_box_{idx}")
+                        box_opts = ["-- Select Word --"] + q.get('box_words', [])
+                        chosen_box = st.selectbox("Select word / اختر الكلمة:", options=box_opts, key=f"ans_box_{idx}")
+                        user_answers[idx] = "" if chosen_box == "-- Select Word --" else chosen_box
+                        
                     elif q_type == "matching":
                         st.write(f"🔹 Match: **{q.get('premise', '')}**")
-                        user_answers[idx] = st.selectbox("Select match:", options=["-- Select Match --"] + q.get('options', []), key=f"ans_match_{idx}")
+                        match_opts = ["-- Select Match --"] + q.get('options', [])
+                        chosen_match = st.selectbox("Select match:", options=match_opts, key=f"ans_match_{idx}")
+                        user_answers[idx] = "" if chosen_match == "-- Select Match --" else chosen_match
+                        
                     elif q_type == "reorder":
                         st.write(q.get('question', 'Rearrange the following words:'))
                         words_list = q.get('scrambled_words', [])
                         selected_words = st.multiselect("Tap words in correct order (اضغط على الكلمات بالترتيب):", options=words_list, key=f"ans_reorder_{idx}")
                         user_answers[idx] = " ".join(selected_words)
+                        
                     elif q_type == "fill_text":
                         st.write(q.get('question', ''))
                         user_answers[idx] = st.text_input("Write your answer:", key=f"ans_filltxt_{idx}")
@@ -631,18 +641,13 @@ if active_exam and active_exam.get("questions"):
                 ans = user_answers.get(idx, "")
                 correct = q.get('answer', '')
                 
-                # Compare using the robust clean function (ignores spaces, punctuation, lowercase)
+                # Robust cleaning for matching, MCQ, fill text, and reorder
                 cleaned_user_ans = clean_text_for_grading(str(ans))
                 cleaned_correct_ans = clean_text_for_grading(str(correct))
                 
                 is_correct = False
-                if q_type in ["reorder", "fill_text", "box_complete"]:
-                    if cleaned_user_ans == cleaned_correct_ans and ans not in ["-- Select Word --", "", None]:
-                        is_correct = True
-                else:
-                    # For MCQ and matching, compare cleaned strings as well to be fully safe
-                    if cleaned_user_ans == cleaned_correct_ans and ans not in ["-- Select Match --", None, ""]:
-                        is_correct = True
+                if cleaned_user_ans == cleaned_correct_ans and ans not in ["-- اختر الإجابة الصحيحة --", "-- Select Word --", "-- Select Match --", "", None]:
+                    is_correct = True
                         
                 if is_correct:
                     score += 1
@@ -677,7 +682,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بتصحيح ذكي يتجاهل علامات الترقيم والمسافات.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بالقوائم المنسدلة والتصحيح المرن.")
         
         tab_weekly, tab_reports, tab_bank, tab_new = st.tabs([
             "🏆 أرشيف أوائل الأسابيع (Weekly Honor)", 
@@ -954,7 +959,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             raw_text = st.text_area("ألصقي نص الأسئلة المنسقة هنا:", height=180, key="new_raw_text")
             
             col_save_draft, col_save_pub = st.columns([1, 1])
-            save_as_draft = col_save_draft.button("📁 حفظ في الأرشيفط (بدون تفعيل حالياً)")
+            save_as_draft = col_save_draft.button("📁 حفظ في الأرشيف فقط (بدون تفعيل حالياً)")
             save_and_pub = col_save_pub.button("🚀 حفظ وتفعيل للطلاب فوراً")
             
             if save_as_draft or save_and_pub:
@@ -965,7 +970,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         if sel_grade not in bank:
                             bank[sel_grade] = {}
                         
-                        exam_id = f"exam_{int(datetime.now().timestamp())`}"
+                        exam_id = f"exam_{int(datetime.now().timestamp())}"
                         bank[sel_grade][exam_id] = {
                             "title": quiz_title.strip(),
                             "unit": quiz_unit.strip(),
