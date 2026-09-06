@@ -137,7 +137,7 @@ GRADES_MAP = {
     "prep3": "Prep 3 (تالتة إعدادي)",
     "sec1": "Secondary 1 (أولى ثانوي)",
     "sec2": "Secondary 2 (تانية ثانوي)",
-    "sec3": "Secondary 3 (تالثة ثانوي)"
+    "sec3": "Secondary 3 (تالتة ثانوي)"
 }
 
 GRADES_LIST = list(GRADES_MAP.values())
@@ -228,7 +228,6 @@ def clean_text_for_grading(text):
     return " ".join(text.split())
 
 def parse_text_locally(text):
-    """Clean and robust parser for all types of questions."""
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     questions = []
     current_passage = ""
@@ -262,12 +261,12 @@ def parse_text_locally(text):
                 if re.search(r'(?i)^answer\s*:', lines[i]):
                     answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip().strip('"\'')
                 i += 1
-            if words:
+            if words and answer:
                 questions.append({
                     "type": "reorder",
                     "question": "Rearrange the words to make a correct sentence:",
                     "scrambled_words": words,
-                    "answer": answer if answer else " ".join(words)
+                    "answer": answer
                 })
             continue
 
@@ -282,12 +281,12 @@ def parse_text_locally(text):
                 elif re.search(r'(?i)^answer\s*:', lines[i]):
                     answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip()
                 i += 1
-            if premise and options:
+            if premise and options and answer:
                 questions.append({
                     "type": "matching",
                     "premise": premise,
                     "options": options,
-                    "answer": answer if answer else options[0]
+                    "answer": answer
                 })
             continue
 
@@ -319,42 +318,34 @@ def parse_text_locally(text):
                     break
                 i += 1
 
-            if current_box_words and not options:
-                questions.append({
-                    "type": "box_complete",
-                    "question": q_text,
-                    "box_words": current_box_words,
-                    "answer": answer
-                })
-            elif options:
-                q_obj = {
-                    "type": "reading" if current_passage else "mcq",
-                    "question": q_text,
-                    "options": options,
-                    "answer": answer if answer else options[0]
-                }
-                if current_passage:
-                    q_obj["passage"] = current_passage
-                questions.append(q_obj)
-            elif answer:
-                questions.append({
-                    "type": "fill_text",
-                    "question": q_text,
-                    "answer": answer
-                })
+            if answer:
+                if current_box_words and not options:
+                    questions.append({
+                        "type": "box_complete",
+                        "question": q_text,
+                        "box_words": current_box_words,
+                        "answer": answer
+                    })
+                elif options:
+                    q_obj = {
+                        "type": "reading" if current_passage else "mcq",
+                        "question": q_text,
+                        "options": options,
+                        "answer": answer
+                    }
+                    if current_passage:
+                        q_obj["passage"] = current_passage
+                    questions.append(q_obj)
+                else:
+                    questions.append({
+                        "type": "fill_text",
+                        "question": q_text,
+                        "answer": answer
+                    })
             continue
             
         i += 1
         
-    if not questions and text.strip():
-        for line in lines:
-            if not line.lower().startswith(('answer:', 'box:', 'words:')):
-                questions.append({
-                    "type": "fill_text",
-                    "question": line,
-                    "answer": line
-                })
-                
     return questions
 
 def record_submission(exam_key, exam_title, student_name, student_phone, student_grade, score, total, percentage):
@@ -444,7 +435,7 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
         var card = document.getElementById("{card_id}");
         html2canvas(card, {{ scale: 2 }}).then(function(canvas) {{
             var link = document.createElement('a');
-            link.download = 'Honor_Roll_{grade_name.split(' ')[0]}.png';
+            link.download = 'Grade_Report_{grade_name.split(' ')[0]}.png';
             link.href = canvas.toDataURL();
             link.click();
         }});
@@ -680,7 +671,7 @@ if active_exam and active_exam.get("questions"):
                     st.error(f"**Q{idx + 1}: Incorrect ❌** | Your answer: {ans or 'None'} | **Model Answer:** {correct}")
                     breakdown_text += f"Q{idx+1}: Incorrect ❌ (Ans: {ans or 'None'} | Correct: {correct})\n"
                     
-            percentage = round((score / total) * 100, 1)
+            percentage = round((score / total) * 100, 1) if total > 0 else 0
             st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
             breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
             
@@ -705,13 +696,14 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بقارئ أسئلة مرن وقوي.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بتقارير الصفوف القابلة للتنزيل كصور.")
         
-        tab_weekly, tab_reports, tab_bank, tab_new = st.tabs([
-            "🏆 أرشيف أوائل الأسابيع (Weekly Honor)", 
+        tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_new = st.tabs([
+            "🏆 أرشيف أوائل الأسابيع", 
             "📊 كشوف الدرجات العامة", 
+            "🏫 تقرير كل صف منفصل (صور Excel)",
             "📚 استعراض بنك الاختبارات", 
-            "➕ إضافة اختبار جديد لصف"
+            "➕ إضافة اختبار جديد"
         ])
         
         # TAB 1: CUSTOM ACADEMIC WEEKLY HONOR ROLL
@@ -891,7 +883,67 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
 
-        # TAB 3: BROWSE EXAM BANK
+        # TAB 3: DEDICATED GRADE REPORT WITH IMAGE DOWNLOAD
+        with tab_grades_report:
+            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع إمكانية حفظه كصورة)")
+            subs_g = load_submissions()
+            
+            if subs_g:
+                selected_report_grade = st.selectbox("اختر الصف الدراسي لعرض كشف درجاته الكامل:", GRADES_LIST, key="dedicated_grade_sel")
+                
+                g_records = []
+                for _, s_data in subs_g.items():
+                    if s_data.get('grade') == selected_report_grade:
+                        g_records.append({
+                            "name": s_data.get('full_name', ''),
+                            "phone": s_data.get('phone', ''),
+                            "exam": s_data.get('exam_title', s_data.get('exam_key', '')),
+                            "score": s_data.get('score', 0),
+                            "total": s_data.get('total', 0),
+                            "percentage": s_data.get('percentage', 0),
+                            "timestamp": clean_time_display(s_data.get('timestamp', ''))
+                        })
+                
+                if g_records:
+                    st.success(f"إجمالي عدد الطلاب الذين أتوا الاختبار في {selected_report_grade}: **{len(g_records)} طالب**")
+                    
+                    # Render visual report card for the selected grade that can be downloaded as image
+                    report_winners = []
+                    for r in sorted(g_records, key=lambda x: (x['percentage'], x['score']), reverse=True):
+                        report_winners.append({
+                            "name": r["name"],
+                            "grade": selected_report_grade,
+                            "score": r["percentage"],
+                            "marks": f"{r['score']}/{r['total']}"
+                        })
+                    
+                    render_honor_card_widget(
+                        selected_report_grade,
+                        "تقرير درجات الطلاب الكامل",
+                        report_winners,
+                        card_id=f"grade-report-{selected_report_grade.replace(' ', '-').replace('(', '').replace(')', '')}"
+                    )
+                    
+                    st.write("---")
+                    st.markdown("#### 📋 جدول البيانات الكامل:")
+                    df_grade_only = pd.DataFrame(g_records)
+                    df_grade_only.columns = ["اسم الطالب", "رقم الهاتف", "عنوان الاختبار", "الدرجة", "المجموع", "النسبة المئوية (%)", "وقت التسليم"]
+                    st.dataframe(df_grade_only, use_container_width=True)
+                    
+                    clean_g_name = selected_report_grade.split(' ')[0]
+                    csv_grade_data = df_grade_only.to_csv(index=False).encode('utf-8-sig')
+                    st.download_button(
+                        label=f"📥 تحميل كشف درجات ({selected_report_grade}) بصيغة Excel",
+                        data=csv_grade_data,
+                        file_name=f"Report_{clean_g_name}_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.info(f"لا توجد أي تسليمات مسجلة لطلاب {selected_report_grade} حتى الآن.")
+            else:
+                st.info("لا توجد بيانات مسجلة في المنصة بعد.")
+
+        # TAB 4: BROWSE EXAM BANK
         with tab_bank:
             st.markdown("### 🔍 اختاري الصف الدراسي المطلوب:")
             selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
@@ -970,7 +1022,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
 
-        # TAB 4: ADD NEW EXAM
+        # TAB 5: ADD NEW EXAM
         with tab_new:
             st.markdown("#### 📝 تجهيز وحفظ اختبار جديد")
             c_g, c_u, c_l = st.columns([2, 1, 1])
