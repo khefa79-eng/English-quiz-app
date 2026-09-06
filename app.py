@@ -7,10 +7,11 @@ import urllib.parse
 from datetime import datetime, timezone, timedelta, date
 import pandas as pd
 
+# تعيين وضع العرض ليكون عريضاً بالكامل (Wide Layout)
 st.set_page_config(
     page_title="Mrs. Kheffa Eletreby | English Assessments",
     page_icon="📝",
-    layout="centered"
+    layout="wide"
 )
 
 # Egypt Local Time (UTC + 3 Hours)
@@ -30,9 +31,30 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0,0,0,0.12);
         text-align: center;
     }
-    .main-title-box h2 { font-size: 1.5rem; margin: 0; font-weight: 800; }
-    .main-title-box h3 { font-size: 1.15rem; margin: 6px 0; color: #E0E7FF; font-weight: 600; }
-    .main-title-box p { font-size: 0.95rem; margin: 0; color: #DBEAFE; }
+    .main-title-box h2 { font-size: 1.7rem; margin: 0; font-weight: 800; }
+    .main-title-box h3 { font-size: 1.25rem; margin: 6px 0; color: #E0E7FF; font-weight: 600; }
+    .main-title-box p { font-size: 1rem; margin: 0; color: #DBEAFE; }
+
+    /* تنسيق لترتيب وتوسيع عروض التبويبات داخل لوحة التحكم */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        width: 100%;
+        display: flex;
+        flex-wrap: wrap;
+    }
+    .stTabs [data-baseweb="tab"] {
+        flex-grow: 1;
+        background-color: #F8FAFC;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-weight: bold;
+        border: 1px solid #CBD5E1;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #EFF6FF !important;
+        border: 2px solid #3B82F6 !important;
+        color: #1E40AF !important;
+    }
 
     .grade-focus-header {
         background-color: #EFF6FF;
@@ -137,7 +159,7 @@ GRADES_MAP = {
     "prep3": "Prep 3 (تالتة إعدادي)",
     "sec1": "Secondary 1 (أولى ثانوي)",
     "sec2": "Secondary 2 (تانية ثانوي)",
-    "sec3": "Secondary 3 (تالتة ثانوي)"
+    "sec3": "Secondary 3 (ثالثة ثانوي)"
 }
 
 GRADES_LIST = list(GRADES_MAP.values())
@@ -555,7 +577,7 @@ if active_exam and active_exam.get("questions"):
                     
                     st.markdown(f"""
                         <div style="text-align: center; margin-top: 15px;">
-                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
+                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
                                 📲 Send Score to Mrs. Kheffa on WhatsApp
                             </a>
                         </div>
@@ -683,7 +705,7 @@ if active_exam and active_exam.get("questions"):
             st.markdown(f"""
                 <div style="text-align: center; margin-top: 25px;">
                     <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 28px; text-decoration: none; font-size: 17px; font-weight: bold; border-radius: 8px; display: inline-block;">
-                        📲 Send Score to Mrs. Kheffa on WhatsApp
+                        📲 Send Result to Mrs. Kheffa on WhatsApp
                     </a>
                 </div>
             """, unsafe_allow_html=True)
@@ -696,14 +718,14 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بتقارير الصفوف القابلة للتنزيل كصور.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بعرض الشاشة الكاملة والتبويبات الواسعة.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_new = st.tabs([
-            "🏆 أرشيف أوائل الأسابيع", 
-            "📊 كشوف الدرجات العامة", 
-            "🏫 تقرير كل صف منفصل (صور Excel)",
-            "📚 استعراض بنك الاختبارات", 
-            "➕ إضافة اختبار جديد"
+            "🏆 أوائل الأسابيع", 
+            "📊 الدرجات العامة", 
+            "🏫 تقرير كل صف (Excel وصورة)",
+            "📚 بنك الاختبارات", 
+            "➕ إضافة اختبار"
         ])
         
         # TAB 1: CUSTOM ACADEMIC WEEKLY HONOR ROLL
@@ -907,7 +929,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 if g_records:
                     st.success(f"إجمالي عدد الطلاب الذين أتوا الاختبار في {selected_report_grade}: **{len(g_records)} طالب**")
                     
-                    # Render visual report card for the selected grade that can be downloaded as image
                     report_winners = []
                     for r in sorted(g_records, key=lambda x: (x['percentage'], x['score']), reverse=True):
                         report_winners.append({
