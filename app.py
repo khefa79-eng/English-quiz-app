@@ -7,7 +7,7 @@ import urllib.parse
 from datetime import datetime, timezone, timedelta, date
 import pandas as pd
 
-# تعيين وضع العرض ليكون عريضاً بالكامل (Wide Layout)
+# تعيين وضع العرض ليكون عريضاً بالكامل (Wide Layout) ومتوافقاً مع كل الأجهزة
 st.set_page_config(
     page_title="Mrs. Kheffa Eletreby | English Assessments",
     page_icon="📝",
@@ -58,7 +58,7 @@ st.markdown("""
 
     .grade-focus-header {
         background-color: #EFF6FF;
-        border: 2px solid #3B82F6;
+        border: 2.5px solid #3B82F6;
         border-radius: 10px;
         padding: 14px 18px;
         margin: 15px 0;
@@ -281,7 +281,7 @@ def parse_text_locally(text):
             i += 1
             while i < len(lines) and not re.search(r'(?i)^(passage|box|match|words)\s*:', lines[i]):
                 if re.search(r'(?i)^answer\s*:', lines[i]):
-                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip().strip('"\'')
+                    answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip().strip('"\'')
                 i += 1
             if words and answer:
                 questions.append({
@@ -436,7 +436,7 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <div style="text-align: center; margin-bottom: 15px;">
         <button onclick="downloadCard_{card_id}()" style="background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 10px rgba(37,99,235,0.3); display: inline-flex; align-items: center; gap: 8px;">
-            📸 حفظ لوحة الشرف كصورة للواتساب (Download Image)
+            📸 حفظ كشف الدرجات كصورة للواتساب (Download Image)
         </button>
     </div>
     <div id="{card_id}" style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 50%, #3B82F6 100%); padding: 25px; border-radius: 16px; color: white; font-family: sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 3px solid #FCD34D; max-width: 680px; margin: 0 auto;">
@@ -718,7 +718,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بعرض الشاشة الكاملة والتبويبات الواسعة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومجهزة بكل الطلبات والميزات الشاملة.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
