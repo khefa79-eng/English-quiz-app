@@ -281,7 +281,7 @@ def parse_text_locally(text):
             i += 1
             while i < len(lines) and not re.search(r'(?i)^(passage|box|match|words)\s*:', lines[i]):
                 if re.search(r'(?i)^answer\s*:', lines[i]):
-                    answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip().strip('"\'')
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip().strip('"\'')
                 i += 1
             if words and answer:
                 questions.append({
@@ -433,12 +433,6 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
         """
         
     widget_html = f"""
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <div style="text-align: center; margin-bottom: 15px;">
-        <button onclick="downloadCard_{card_id}()" style="background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 10px rgba(37,99,235,0.3); display: inline-flex; align-items: center; gap: 8px;">
-            📸 حفظ كشف الدرجات كصورة للواتساب (Download Image)
-        </button>
-    </div>
     <div id="{card_id}" style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 50%, #3B82F6 100%); padding: 25px; border-radius: 16px; color: white; font-family: sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 3px solid #FCD34D; max-width: 680px; margin: 0 auto;">
         <div style="text-align: center; border-bottom: 2px dashed rgba(255,255,255,0.3); padding-bottom: 15px; margin-bottom: 18px;">
             <div style="font-size: 1.8rem; margin-bottom: 4px;">🏆 <b>HONOR ROLL & TOP ACHIEVERS</b> 🏆</div>
@@ -452,19 +446,11 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
             🌟 ألف مبروك لأبطالنا المتميزين مع أطيب أمنياتي بدوام التفوق والنجاح! 🌟
         </div>
     </div>
-    <script>
-    function downloadCard_{card_id}() {{
-        var card = document.getElementById("{card_id}");
-        html2canvas(card, {{ scale: 2 }}).then(function(canvas) {{
-            var link = document.createElement('a');
-            link.download = 'Grade_Report_{grade_name.split(' ')[0]}.png';
-            link.href = canvas.toDataURL();
-            link.click();
-        }});
-    }}
-    </script>
+    <div style="text-align: center; margin-top: 12px; color: #334155; font-size: 0.9rem; font-weight: bold;">
+        💡 (للحفظ على الموبايل أو الكمبيوتر: قُم بأخذ لقطة شاشة Screenshot لهذا الكارت مباشرة)
+    </div>
     """
-    st.components.v1.html(widget_html, height=len(winners_list) * 65 + 240)
+    st.components.v1.html(widget_html, height=len(winners_list) * 65 + 280)
 
 # --- EXAM LOCATOR ---
 exam_bank = load_exam_bank()
@@ -662,7 +648,7 @@ if active_exam and active_exam.get("questions"):
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
-        # Results View
+        # Results View (ستايل موحد لجميع الطلاب بنمط الـ WhatsApp المقترح)
         if st.session_state.get('exam_submitted', False):
             st.subheader("📋 Results & Model Answers")
             score = 0
@@ -687,10 +673,10 @@ if active_exam and active_exam.get("questions"):
                         
                 if is_correct:
                     score += 1
-                    st.success(f"**Q{idx + 1}: Correct ✅** (Your answer: {ans})")
+                    st.markdown(f"**Q{idx + 1}: Correct ✅** <span style='color: green; font-weight: bold;'>(Your answer: {ans})</span>", unsafe_allow_html=True)
                     breakdown_text += f"Q{idx+1}: Correct ✅\n"
                 else:
-                    st.error(f"**Q{idx + 1}: Incorrect ❌** | Your answer: {ans or 'None'} | **Model Answer:** {correct}")
+                    st.markdown(f"**Q{idx + 1}: Incorrect ❌** | <span style='color: red;'>Your answer: {ans or 'None'}</span> | **Model Answer:** <span style='color: green; font-weight: bold;'>{correct}</span>", unsafe_allow_html=True)
                     breakdown_text += f"Q{idx+1}: Incorrect ❌ (Ans: {ans or 'None'} | Correct: {correct})\n"
                     
             percentage = round((score / total) * 100, 1) if total > 0 else 0
@@ -718,7 +704,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومجهزة بنظام المعاينة والتدقيق المسبق للأسئلة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومجهزة بكل الطلبات والميزات الشاملة.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -905,9 +891,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
 
-        # TAB 3: DEDICATED GRADE REPORT WITH IMAGE DOWNLOAD
+        # TAB 3: DEDICATED GRADE REPORT WITH STAR OF THE DAY FEATURE
         with tab_grades_report:
-            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع إمكانية حفظه كصورة)")
+            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع تحديد Star of the Day)")
             subs_g = load_submissions()
             
             if subs_g:
@@ -923,12 +909,32 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             "score": s_data.get('score', 0),
                             "total": s_data.get('total', 0),
                             "percentage": s_data.get('percentage', 0),
-                            "timestamp": clean_time_display(s_data.get('timestamp', ''))
+                            "timestamp": s_data.get('timestamp', '')
                         })
                 
                 if g_records:
                     st.success(f"إجمالي عدد الطلاب الذين أتوا الاختبار في {selected_report_grade}: **{len(g_records)} طالب**")
                     
+                    # --- تحديد Star of the Day (أول طالب أنهى الامتحان وحصل على الدرجة النهائية 100%) ---
+                    # ترتيب حسب وقت التسليم (الأقدم أولاً) ثم بالدرجة الأعلى
+                    sorted_by_time = sorted(g_records, key=lambda x: x['timestamp'])
+                    star_candidate = None
+                    for student in sorted_by_time:
+                        if student['percentage'] == 100.0:
+                            star_candidate = student
+                            break
+                    
+                    if star_candidate:
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #F59E0B, #D97706); padding: 18px; border-radius: 12px; color: white; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(245,158,11,0.3);">
+                            <div style="font-size: 1.5rem; font-weight: 800;">⭐ STAR OF THE DAY ⭐</div>
+                            <div style="font-size: 1.2rem; font-weight: 700; margin-top: 5px;">أول بطل أتم الاختبار بالدرجة النهائية: <b>{star_candidate['name']}</b></div>
+                            <div style="font-size: 0.95rem; margin-top: 4px; color: #FEF3C7;">📝 الاختبار: {star_candidate['exam']} | 🕒 وقت التسليم: {clean_time_display(star_candidate['timestamp'])}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.info("💡 لم يحصل أي طالب على الدرجة النهائية (100%) حتى الآن لتحديد Star of the Day.")
+
                     report_winners = []
                     for r in sorted(g_records, key=lambda x: (x['percentage'], x['score']), reverse=True):
                         report_winners.append({
@@ -947,8 +953,16 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     
                     st.write("---")
                     st.markdown("#### 📋 جدول البيانات الكامل:")
-                    df_grade_only = pd.DataFrame(g_records)
-                    df_grade_only.columns = ["اسم الطالب", "رقم الهاتف", "عنوان الاختبار", "الدرجة", "المجموع", "النسبة المئوية (%)", "وقت التسليم"]
+                    df_grade_only = pd.DataFrame([{
+                        "اسم الطالب": x["name"],
+                        "رقم الهاتف": x["phone"],
+                        "عنوان الاختبار": x["exam"],
+                        "الدرجة": x["score"],
+                        "المجموع": x["total"],
+                        "النسبة المئوية (%)": f"{x['percentage']}%",
+                        "وقت التسليم": clean_time_display(x["timestamp"])
+                    } for x in g_records])
+                    
                     st.dataframe(df_grade_only, use_container_width=True)
                     
                     clean_g_name = selected_report_grade.split(' ')[0]
@@ -957,7 +971,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         label=f"📥 تحميل كشف درجات ({selected_report_grade}) بصيغة Excel",
                         data=csv_grade_data,
                         file_name=f"Report_{clean_g_name}_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
+                        mime="text/css" if False else "text/csv"
                     )
                 else:
                     st.info(f"لا توجد أي تسليمات مسجلة لطلاب {selected_report_grade} حتى الآن.")
@@ -1072,7 +1086,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             st.write("---")
                         st.info("إذا كانت المعاينة سليمة تماماً، يمكنكِ النزول بالأسفل وحفظها أو تفعيلها فوراً!")
                     else:
-                        st.error("⚠️ عذراً، لم يتمكن البرنامج من قراءة الأسئلة. تأجي من تنسيقها الصحيح.")
+                        st.error("⚠️ عذراً، لم يتمكن البرنامج من قراءة الأسئلة. تأكدي من التنسيق الصحيح.")
                 else:
                     st.warning("يرجى لصق نص الأسئلة أولاً لمعاينتها.")
             
