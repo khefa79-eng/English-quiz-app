@@ -718,7 +718,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومجهزة بكل الطلبات والميزات الشاملة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومجهزة بنظام المعاينة والتدقيق المسبق للأسئلة.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -1043,16 +1043,38 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
 
-        # TAB 5: ADD NEW EXAM
+        # TAB 5: ADD NEW EXAM WITH PREVIEW & VALIDATION FEATURE
         with tab_new:
-            st.markdown("#### 📝 تجهيز وحفظ اختبار جديد")
+            st.markdown("#### 📝 تجهيز ومعاينة وحفظ اختبار جديد")
             c_g, c_u, c_l = st.columns([2, 1, 1])
             sel_grade = c_g.selectbox("الصف الدراسي المستهدف:", GRADES_LIST, key="new_exam_grade")
             quiz_unit = c_u.text_input("الوحدة (Unit):", "Unit 1", key="exam_unit_input")
             quiz_lesson = c_l.text_input("الدرس (Lesson):", "Lesson 1", key="exam_lesson_input")
             
             quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
-            raw_text = st.text_area("ألصقي نص الأسئلة المنسقة هنا:", height=180, key="new_raw_text")
+            raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا:", height=180, key="new_raw_text")
+            
+            # --- مرحلة التدقيق والمعاينة المسبقة (Preview & Validation) ---
+            if st.button("🔍 معاينة وتدقيق الأسئلة قبل النشر (Preview Quiz)", key="preview_btn"):
+                if raw_text.strip():
+                    preview_parsed = parse_text_locally(raw_text)
+                    if preview_parsed:
+                        st.success(f"✅ تم تحليل الأسئلة بنجاح! إجمالي عدد الأسئلة الصحيحة والمستخرجة: **{len(preview_parsed)} سؤال**")
+                        st.markdown("---")
+                        st.markdown("### 👀 معاينة شكل الأسئلة كما سيراها الطلاب:")
+                        for p_idx, p_q in enumerate(preview_parsed):
+                            st.markdown(f"**Q{p_idx + 1} [{p_q.get('type')}]:** {p_q.get('question', p_q.get('premise', ''))}")
+                            if p_q.get('options'):
+                                st.write(f"الخيارات: {p_q.get('options')}")
+                            if p_q.get('box_words'):
+                                st.write(f"صندوق الكلمات: {p_q.get('box_words')}")
+                            st.markdown(f"🟢 **الإجابة النموذجية المسجلة:** `{p_q.get('answer')}`")
+                            st.write("---")
+                        st.info("إذا كانت المعاينة سليمة تماماً، يمكنكِ النزول بالأسفل وحفظها أو تفعيلها فوراً!")
+                    else:
+                        st.error("⚠️ عذراً، لم يتمكن البرنامج من قراءة الأسئلة. تأجي من تنسيقها الصحيح.")
+                else:
+                    st.warning("يرجى لصق نص الأسئلة أولاً لمعاينتها.")
             
             col_save_draft, col_save_pub = st.columns([1, 1])
             save_as_draft = col_save_draft.button("📁 حفظ في الأرشيف فقط (بدون تفعيل حالياً)")
