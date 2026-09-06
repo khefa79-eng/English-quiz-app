@@ -228,20 +228,17 @@ def clean_text_for_grading(text):
     return " ".join(text.split())
 
 def parse_text_locally(text):
-    """Extremely flexible parser: handles numbered questions, plain text blocks with Answer:, MCQ, Reorder, and Box complete."""
+    """Clean and robust parser for all types of questions."""
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     questions = []
     current_passage = ""
     current_box_words = []
     i = 0
-    
-    # Fallback auto-numbering if questions lack explicit numbers
     auto_q_counter = 1
     
     while i < len(lines):
         line = lines[i]
         
-        # Check for Passage
         if re.match(r'(?i)^passage\s*:\s*', line):
             current_passage = re.sub(r'(?i)^passage\s*:\s*', '', line).strip()
             i += 1
@@ -250,14 +247,12 @@ def parse_text_locally(text):
                 i += 1
             continue
 
-        # Check for Box words
         if re.match(r'(?i)^box\s*:\s*', line):
             raw_box = re.sub(r'(?i)^box\s*:\s*', '', line).strip('[] ')
             current_box_words = [w.strip().strip('"\'') for w in raw_box.split(',') if w.strip()]
             i += 1
             continue
 
-        # Check for Reorder/Words questions
         if re.search(r'(?i)^words\s*:', line):
             words_raw = re.search(r'\[(.*?)\]', line)
             words = [w.strip().strip('"\'') for w in words_raw.group(1).split(',')] if words_raw else []
@@ -276,9 +271,8 @@ def parse_text_locally(text):
                 })
             continue
 
-        # Check for Matching questions
-        if re.search(r'(?i)^?\d*[\.\-]?\s*match\s*:', line):
-            premise = re.sub(r'(?i)^\d+[\.\-]?\s*match\s*:', '', line).strip()
+        if re.search(r'(?i)match\s*:', line):
+            premise = re.sub(r'(?i)^\d*[\.\-]?\s*match\s*:', '', line).strip()
             options, answer = [], ""
             i += 1
             while i < len(lines) and not re.search(r'(?i)^(passage|box|match|words)\s*:', lines[i]):
@@ -297,21 +291,18 @@ def parse_text_locally(text):
                 })
             continue
 
-        # Handle standard question lines (whether numbered like "1." or plain text like "I am in...")
         is_question_line = bool(re.match(r'^\d+[\.\-]', line)) or (not line.lower().startswith(('a.', 'b.', 'c.', 'd.', 'answer:', 'options:')))
         
         if is_question_line:
             q_text = line
-            # If line doesn't start with a number, prepend an auto number for clean display
             if not re.match(r'^\d+[\.\-]', q_text):
                 q_text = f"{auto_q_counter}. {q_text}"
-            
             auto_q_counter += 1
+            
             options = []
             answer = ""
             i += 1
             
-            # Look ahead for options or answer
             while i < len(lines):
                 sub_line = lines[i]
                 if re.search(r'(?i)^answer\s*:', sub_line):
@@ -325,7 +316,6 @@ def parse_text_locally(text):
                     opt_val = re.sub(r'^[a-dA-D][\.\)]\s*', '', sub_line).strip()
                     options.append(opt_val)
                 elif re.match(r'^\d+[\.\-]', sub_line) or re.search(r'(?i)^(passage|box|match|words)\s*:', sub_line):
-                    # Next question or block reached
                     break
                 i += 1
 
@@ -347,7 +337,6 @@ def parse_text_locally(text):
                     q_obj["passage"] = current_passage
                 questions.append(q_obj)
             elif answer:
-                # Fill-text or sentence completion (like the ones in your screenshot)
                 questions.append({
                     "type": "fill_text",
                     "question": q_text,
@@ -357,7 +346,6 @@ def parse_text_locally(text):
             
         i += 1
         
-    # Ultimate Fallback: If text has lines but parser was too strict, capture text blocks as fill_text
     if not questions and text.strip():
         for line in lines:
             if not line.lower().startswith(('answer:', 'box:', 'words:')):
@@ -576,7 +564,7 @@ if active_exam and active_exam.get("questions"):
                     
                     st.markdown(f"""
                         <div style="text-align: center; margin-top: 15px;">
-                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
+                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
                                 📲 Send Score to Mrs. Kheffa on WhatsApp
                             </a>
                         </div>
@@ -704,7 +692,7 @@ if active_exam and active_exam.get("questions"):
             st.markdown(f"""
                 <div style="text-align: center; margin-top: 25px;">
                     <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 28px; text-decoration: none; font-size: 17px; font-weight: bold; border-radius: 8px; display: inline-block;">
-                        📲 Send Result to Mrs. Kheffa on WhatsApp
+                        📲 Send Score to Mrs. Kheffa on WhatsApp
                     </a>
                 </div>
             """, unsafe_allow_html=True)
@@ -717,7 +705,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بقارئ أسئلة مرن للغاية.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بقارئ أسئلة مرن وقوي.")
         
         tab_weekly, tab_reports, tab_bank, tab_new = st.tabs([
             "🏆 أرشيف أوائل الأسابيع (Weekly Honor)", 
@@ -990,7 +978,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             quiz_unit = c_u.text_input("الوحدة (Unit):", "Unit 1", key="exam_unit_input")
             quiz_lesson = c_l.text_input("الدرس (Lesson):", "Lesson 1", key="exam_lesson_input")
             
-            quiz_title = t = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
+            quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
             raw_text = st.text_area("ألصقي نص الأسئلة المنسقة هنا:", height=180, key="new_raw_text")
             
             col_save_draft, col_save_pub = st.columns([1, 1])
