@@ -122,7 +122,7 @@ ACTIVE_GRADES_FILE = "active_by_grade.json"
 SUBMISSIONS_FILE = "submitted_students.json"
 
 GRADES_MAP = {
-    "p1": "Primary 1 - Connect (أولى ابتدائي - عادئ)",
+    "p1": "Primary 1 - Connect (أولى ابتدائي - عادي)",
     "p2": "Primary 2 - Connect (تانية ابتدائي - عادي)",
     "p3": "Primary 3 - Connect (تالتة ابتدائي - عادي)",
     "p3_plus": "Primary 3 - Connect Plus (تالتة ابتدائي - بلس)",
@@ -220,13 +220,154 @@ def load_submissions():
     return {}
 
 def clean_text_for_grading(text):
-    """Completely ignores punctuation, extra spaces, and case sensitivity."""
     if not text:
         return ""
     punctuation_to_remove = string.punctuation + '؟،؛«»ـ“”‘’'
     text = text.translate(str.maketrans('', '', punctuation_to_remove))
     text = text.lower()
     return " ".join(text.split())
+
+def parse_text_locally(text):
+    """Extremely flexible parser: handles numbered questions, plain text blocks with Answer:, MCQ, Reorder, and Box complete."""
+    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    questions = []
+    current_passage = ""
+    current_box_words = []
+    i = 0
+    
+    # Fallback auto-numbering if questions lack explicit numbers
+    auto_q_counter = 1
+    
+    while i < len(lines):
+        line = lines[i]
+        
+        # Check for Passage
+        if re.match(r'(?i)^passage\s*:\s*', line):
+            current_passage = re.sub(r'(?i)^passage\s*:\s*', '', line).strip()
+            i += 1
+            while i < len(lines) and not re.match(r'^(\d+[\.\-]|a[\.\)]|b[\.\)]|c[\.\)]|d[\.\)])', lines[i]) and not re.search(r'(?i)^(match|words|box|answer)\s*:', lines[i]):
+                current_passage += " " + lines[i]
+                i += 1
+            continue
+
+        # Check for Box words
+        if re.match(r'(?i)^box\s*:\s*', line):
+            raw_box = re.sub(r'(?i)^box\s*:\s*', '', line).strip('[] ')
+            current_box_words = [w.strip().strip('"\'') for w in raw_box.split(',') if w.strip()]
+            i += 1
+            continue
+
+        # Check for Reorder/Words questions
+        if re.search(r'(?i)^words\s*:', line):
+            words_raw = re.search(r'\[(.*?)\]', line)
+            words = [w.strip().strip('"\'') for w in words_raw.group(1).split(',')] if words_raw else []
+            answer = ""
+            i += 1
+            while i < len(lines) and not re.search(r'(?i)^(passage|box|match|words)\s*:', lines[i]):
+                if re.search(r'(?i)^answer\s*:', lines[i]):
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip().strip('"\'')
+                i += 1
+            if words:
+                questions.append({
+                    "type": "reorder",
+                    "question": "Rearrange the words to make a correct sentence:",
+                    "scrambled_words": words,
+                    "answer": answer if answer else " ".join(words)
+                })
+            continue
+
+        # Check for Matching questions
+        if re.search(r'(?i)^?\d*[\.\-]?\s*match\s*:', line):
+            premise = re.sub(r'(?i)^\d+[\.\-]?\s*match\s*:', '', line).strip()
+            options, answer = [], ""
+            i += 1
+            while i < len(lines) and not re.search(r'(?i)^(passage|box|match|words)\s*:', lines[i]):
+                if re.search(r'(?i)^options\s*:', lines[i]):
+                    opt_raw = re.sub(r'(?i)^options\s*:', '', lines[i]).strip('[] ')
+                    options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
+                elif re.search(r'(?i)^answer\s*:', lines[i]):
+                    answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip()
+                i += 1
+            if premise and options:
+                questions.append({
+                    "type": "matching",
+                    "premise": premise,
+                    "options": options,
+                    "answer": answer if answer else options[0]
+                })
+            continue
+
+        # Handle standard question lines (whether numbered like "1." or plain text like "I am in...")
+        is_question_line = bool(re.match(r'^\d+[\.\-]', line)) or (not line.lower().startswith(('a.', 'b.', 'c.', 'd.', 'answer:', 'options:')))
+        
+        if is_question_line:
+            q_text = line
+            # If line doesn't start with a number, prepend an auto number for clean display
+            if not re.match(r'^\d+[\.\-]', q_text):
+                q_text = f"{auto_q_counter}. {q_text}"
+            
+            auto_q_counter += 1
+            options = []
+            answer = ""
+            i += 1
+            
+            # Look ahead for options or answer
+            while i < len(lines):
+                sub_line = lines[i]
+                if re.search(r'(?i)^answer\s*:', sub_line):
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', sub_line).strip()
+                    i += 1
+                    break
+                elif re.search(r'(?i)^options\s*:', sub_line):
+                    opt_raw = re.sub(r'(?i)^options\s*:', '', sub_line).strip('[] ')
+                    options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
+                elif re.match(r'^[a-dA-D][\.\)]', sub_line):
+                    opt_val = re.sub(r'^[a-dA-D][\.\)]\s*', '', sub_line).strip()
+                    options.append(opt_val)
+                elif re.match(r'^\d+[\.\-]', sub_line) or re.search(r'(?i)^(passage|box|match|words)\s*:', sub_line):
+                    # Next question or block reached
+                    break
+                i += 1
+
+            if current_box_words and not options:
+                questions.append({
+                    "type": "box_complete",
+                    "question": q_text,
+                    "box_words": current_box_words,
+                    "answer": answer
+                })
+            elif options:
+                q_obj = {
+                    "type": "reading" if current_passage else "mcq",
+                    "question": q_text,
+                    "options": options,
+                    "answer": answer if answer else options[0]
+                }
+                if current_passage:
+                    q_obj["passage"] = current_passage
+                questions.append(q_obj)
+            elif answer:
+                # Fill-text or sentence completion (like the ones in your screenshot)
+                questions.append({
+                    "type": "fill_text",
+                    "question": q_text,
+                    "answer": answer
+                })
+            continue
+            
+        i += 1
+        
+    # Ultimate Fallback: If text has lines but parser was too strict, capture text blocks as fill_text
+    if not questions and text.strip():
+        for line in lines:
+            if not line.lower().startswith(('answer:', 'box:', 'words:')):
+                questions.append({
+                    "type": "fill_text",
+                    "question": line,
+                    "answer": line
+                })
+                
+    return questions
 
 def record_submission(exam_key, exam_title, student_name, student_phone, student_grade, score, total, percentage):
     submissions = load_submissions()
@@ -324,111 +465,7 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
     """
     st.components.v1.html(widget_html, height=len(winners_list) * 65 + 240)
 
-def parse_text_locally(text):
-    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
-    questions = []
-    current_passage = ""
-    current_box_words = []
-    i = 0
-    
-    while i < len(lines):
-        line = lines[i]
-        
-        if re.match(r'(?i)^passage\s*:\s*', line):
-            current_passage = re.sub(r'(?i)^passage\s*:\s*', '', line).strip()
-            i += 1
-            while i < len(lines) and not re.match(r'^\d+[\.\-]', lines[i]) and not re.search(r'(?i)^(match|words|box)\s*:', lines[i]):
-                current_passage += " " + lines[i]
-                i += 1
-            continue
-
-        if re.match(r'(?i)^box\s*:\s*', line):
-            raw_box = re.sub(r'(?i)^box\s*:\s*', '', line).strip('[] ')
-            current_box_words = [w.strip().strip('"\'') for w in raw_box.split(',') if w.strip()]
-            i += 1
-            continue
-
-        if re.search(r'(?i)match\s*:', line):
-            premise = re.sub(r'(?i)^\d+[\.\-]?\s*match\s*:\s*', '', line).strip()
-            options, answer = [], ""
-            i += 1
-            while i < len(lines) and not re.match(r'^\d+[\.\-]', lines[i]) and not re.search(r'(?i)^(passage|box)\s*:', lines[i]):
-                if re.search(r'(?i)^options\s*:', lines[i]):
-                    opt_raw = re.sub(r'(?i)^options\s*:', '', lines[i]).strip('[] ')
-                    options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
-                elif re.search(r'(?i)^answer\s*:', lines[i]):
-                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip()
-                i += 1
-            if premise and options:
-                questions.append({
-                    "type": "matching",
-                    "premise": premise,
-                    "options": options,
-                    "answer": answer if answer else options[0]
-                })
-            continue
-
-        elif re.search(r'(?i)words\s*:', line):
-            words_raw = re.search(r'\[(.*?)\]', line)
-            words = [w.strip().strip('"\'') for w in words_raw.group(1).split(',')] if words_raw else []
-            answer = ""
-            i += 1
-            if i < len(lines) and re.search(r'(?i)^answer\s*:', lines[i]):
-                answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip()
-                i += 1
-            if words:
-                questions.append({
-                    "type": "reorder",
-                    "question": "Rearrange the words to make a correct sentence:",
-                    "scrambled_words": words,
-                    "answer": answer if answer else " ".join(words)
-                })
-            continue
-
-        elif re.match(r'^\d+[\.\-]', line):
-            q_text = line
-            options = []
-            answer = ""
-            i += 1
-            while i < len(lines) and (re.match(r'^[a-dA-D][\.\)]', lines[i]) or re.search(r'(?i)^answer\s*:', lines[i]) or re.search(r'(?i)^options\s*:', lines[i])):
-                if re.search(r'(?i)^answer\s*:', lines[i]):
-                    answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip()
-                elif re.search(r'(?i)^options\s*:', lines[i]):
-                    opt_raw = re.sub(r'(?i)^options\s*:', '', lines[i]).strip('[] ')
-                    options = [o.strip().strip('"\'') for o in opt_raw.split(',') if o.strip()]
-                else:
-                    opt_val = re.sub(r'^[a-dA-D][\.\)]\s*', '', lines[i]).strip()
-                    options.append(opt_val)
-                i += 1
-
-            if current_box_words and not options:
-                questions.append({
-                    "type": "box_complete",
-                    "question": q_text,
-                    "box_words": current_box_words,
-                    "answer": answer
-                })
-            elif options:
-                q_obj = {
-                    "type": "reading" if current_passage else "mcq",
-                    "question": q_text,
-                    "options": options,
-                    "answer": answer if answer else options[0]
-                }
-                if current_passage:
-                    q_obj["passage"] = current_passage
-                questions.append(q_obj)
-            elif answer:
-                questions.append({
-                    "type": "fill_text",
-                    "question": q_text,
-                    "answer": answer
-                })
-            continue
-        i += 1
-    return questions
-
-# --- ROBUST EXAM LOCATOR ---
+# --- EXAM LOCATOR ---
 exam_bank = load_exam_bank()
 active_grades_map = load_active_grades()
 query_params = st.query_params
@@ -588,7 +625,6 @@ if active_exam and active_exam.get("questions"):
                             """, unsafe_allow_html=True)
                             displayed_boxes.add(box_key)
                     
-                    # Enhanced Interactive Inputs (Dropdowns for MCQ & Matching, Multiselect for Reorder)
                     if q_type in ["mcq", "reading"]:
                         st.write(q.get('question', ''))
                         opt_list = ["-- اختر الإجابة الصحيحة --"] + q.get('options', [])
@@ -641,7 +677,6 @@ if active_exam and active_exam.get("questions"):
                 ans = user_answers.get(idx, "")
                 correct = q.get('answer', '')
                 
-                # Robust cleaning for matching, MCQ, fill text, and reorder
                 cleaned_user_ans = clean_text_for_grading(str(ans))
                 cleaned_correct_ans = clean_text_for_grading(str(correct))
                 
@@ -682,7 +717,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بالقوائم المنسدلة والتصحيح المرن.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم مدعومة بقارئ أسئلة مرن للغاية.")
         
         tab_weekly, tab_reports, tab_bank, tab_new = st.tabs([
             "🏆 أرشيف أوائل الأسابيع (Weekly Honor)", 
@@ -955,7 +990,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             quiz_unit = c_u.text_input("الوحدة (Unit):", "Unit 1", key="exam_unit_input")
             quiz_lesson = c_l.text_input("الدرس (Lesson):", "Lesson 1", key="exam_lesson_input")
             
-            quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
+            quiz_title = t = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
             raw_text = st.text_area("ألصقي نص الأسئلة المنسقة هنا:", height=180, key="new_raw_text")
             
             col_save_draft, col_save_pub = st.columns([1, 1])
