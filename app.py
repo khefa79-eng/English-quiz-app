@@ -787,7 +787,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بنظام تصفية الطلاب، التدقيق الذكي، وتوليد ملفات الـ PDF الملونة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بتسمية ملفات الـ PDF تلقائياً وتصفية الطلاب.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -1158,7 +1158,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
 
-        # TAB 5: BEAUTIFUL PRINTABLE/PDF EXPORT FOR CLASSROOM DISCUSSION
+        # TAB 5: BEAUTIFUL PRINTABLE/PDF EXPORT WITH AUTO FILENAME
         with tab_pdf:
             st.markdown("### 📄 المعاينة البصرية والطباعة بصيغة PDF (مناقشة الشرح مع الطلاب)")
             pdf_grade = st.selectbox("اختر الصف الدراسي للاختبار:", GRADES_LIST, key="pdf_grade_sel")
@@ -1173,7 +1173,11 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     target_e_id = exam_titles_map[chosen_exam_label]
                     selected_exam_obj = grade_exams_pdf[target_e_id]
                     
-                    # بناء محتوى HTML منمّق وملون احترافي للطباعة والحفظ كـ PDF
+                    # اسم مقترح نظيف واحترافي للملف تلقائياً
+                    clean_grade_prefix = pdf_grade.split(' ')[0] + "_" + pdf_grade.split(' ')[1]
+                    clean_exam_title_str = re.sub(r'[^\w\s]', '', selected_exam_obj.get('title', 'Quiz')).replace(' ', '_')
+                    suggested_filename = f"Model_Answers_{clean_grade_prefix}_{clean_exam_title_str}"
+                    
                     questions_html = ""
                     for q_idx, q_item in enumerate(selected_exam_obj.get('questions', []), 1):
                         q_txt = q_item.get('question', q_item.get('premise', ''))
@@ -1196,6 +1200,13 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         """
                         
                     printable_html = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>{suggested_filename}</title>
+                        <meta charset="utf-8">
+                    </head>
+                    <body>
                     <div style="direction: ltr; font-family: Arial, sans-serif; background: white; padding: 25px; border-radius: 14px; border: 2px solid #3B82F6; max-width: 800px; margin: 0 auto;">
                         <div style="background: linear-gradient(135deg, #1E3A8A, #3B82F6); color: white; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
                             <h2 style="margin:0; font-size:1.5rem;">🎓 ENGLISH ASSESSMENT & MODEL ANSWERS</h2>
@@ -1210,13 +1221,15 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             🌟 بالتوفيق دائماً لطلابنا المتميزين — Mrs. Kheffa Eletreby 🌟
                         </div>
                     </div>
+                    </body>
+                    </html>
                     """
                     
                     st.markdown("### 👀 معاينة التصميم الملون قبل الطباعة:")
                     st.components.v1.html(printable_html, height=600, scrolling=True)
                     
                     st.markdown("---")
-                    st.info("💡 **للحفظ بصيغة PDF أو الطباعة المباشرة:** اضغطي على زر المعاينة بالأعلى بزر الماوس الأيمن واختاري **Print (طباعة)**، ثم قومي باختيار **Save as PDF** لحفظ الملف كـ PDF منمق وجاهز للشرح!")
+                    st.info(f"💡 **طريقة الحفظ التلقائي:** عند الضغط بزر الماوس الأيمن داخل إطار المعاينة واختيار **Print (طباعة)**، سيقترح عليك المتصفح تلقائياً اسم الملف: `📁 {suggested_filename}` لحفظه مباشرة بصيغة PDF!")
             else:
                 st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد مستندها.")
 
