@@ -207,7 +207,7 @@ def calculate_custom_academic_week(sub_date):
     label = f"Week {week_num} (من {start_of_week.strftime('%Y-%m-%d')} إلى {end_of_week.strftime('%Y-%m-%d')})"
     return label, week_num
 
-# --- دوال الربط بـ Google Sheets ---
+# --- دوال الربط بـ Google Sheets مع منع التكرار ---
 def load_exam_bank():
     try:
         req = urllib.request.Request(EXAM_API_URL, headers={'User-Agent': 'Mozilla/5.0'})
@@ -221,6 +221,13 @@ def load_exam_bank():
 
 def save_exam_to_sheet(exam_id, grade, exam_data, created_at):
     try:
+        # التحقق مسبقاً من عدم وجود اختبار بنفس العنوان والمحتوى لنفس الصف (Anti-Duplicate)
+        existing_bank = load_exam_bank()
+        if grade in existing_bank:
+            for _, ex in existing_bank[grade].items():
+                if ex.get("title") == exam_data.get("title") and ex.get("questions") == exam_data.get("questions"):
+                    return True # تم الحفظ مسبقاً، نعتبرها ناجحة بدون تكرار
+                    
         payload = json.dumps({
             "action": "save_exam",
             "exam_id": exam_id,
@@ -729,7 +736,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومبرمجة للاتصال الدائم بجوجل درايف.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومبرمجة للاتصال الدائم بجوجل درايف مع الحماية من التكرار.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -1074,7 +1081,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         
                     if c2.button(f"🗑️ حذف الاختبار ({idx})", key=f"del_{e_id}"):
                         del bank[selected_manage_grade][e_id]
-                        # حفظ التحديث بعد الحذف
                         st.rerun()
                     st.write("")
             else:
@@ -1136,7 +1142,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         if saved_ok:
                             if save_and_pub:
                                 set_active_exam_for_grade(sel_grade, exam_id)
-                                st.success(f"🎉 تم حفظ وتفعيل '{quiz_title}' لصف {sel_grade} فوراً على جوجل شيت!")
+                                st.success(f"🎉 تم حفظ وتفعيل '{quiz_title}' لصف {sel_grade} فوراً على جوجل شيت بدون أي تكرار!")
                             else:
                                 st.success(f"📁 تم حفظ '{quiz_title}' في مجلد {sel_grade} بنجاح على جوجل شيت كأرشيف!")
                             st.rerun()
