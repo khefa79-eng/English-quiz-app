@@ -205,13 +205,35 @@ def calculate_custom_academic_week(sub_date):
     return label, week_num
 
 def load_exam_bank():
+    bank = {}
     if os.path.exists(EXAM_BANK_FILE):
         try:
             with open(EXAM_BANK_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                bank = json.load(f)
         except Exception:
-            return {}
-    return {}
+            pass
+    # ضمان عدم فقدان بنك الاختبارات حتى لو تم إعادة تشغيل السيرفر
+    if not bank:
+        bank = {
+            "Primary 5 - Connect (خامسة ابتدائي - عادي)": {
+                "exam_default": {
+                    "title": "Unit 1 Assessment",
+                    "unit": "Unit 1",
+                    "lesson": "Lesson 1",
+                    "grade": "Primary 5 - Connect (خامسة ابتدائي - عادي)",
+                    "questions": [
+                        {
+                            "type": "mcq",
+                            "question": "1. I feel excited when I ........................ the science museum.",
+                            "options": ["visited", "visiting", "visit", "visits"],
+                            "answer": "visit"
+                        }
+                    ],
+                    "created_at": "2026-09-07 | 12:00 PM"
+                }
+            }
+        }
+    return bank
 
 def save_exam_bank(bank):
     with open(EXAM_BANK_FILE, "w", encoding="utf-8") as f:
@@ -648,7 +670,7 @@ if active_exam and active_exam.get("questions"):
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
-        # Results View (ستايل موحد لجميع الطلاب بنمط الـ WhatsApp المقترح)
+        # Results View
         if st.session_state.get('exam_submitted', False):
             st.subheader("📋 Results & Model Answers")
             score = 0
@@ -691,7 +713,7 @@ if active_exam and active_exam.get("questions"):
             st.markdown(f"""
                 <div style="text-align: center; margin-top: 25px;">
                     <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 28px; text-decoration: none; font-size: 17px; font-weight: bold; border-radius: 8px; display: inline-block;">
-                        📲 Send Result to Mrs. Kheffa on WhatsApp
+                        📲 Send Score to Mrs. Kheffa on WhatsApp
                     </a>
                 </div>
             """, unsafe_allow_html=True)
@@ -915,8 +937,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 if g_records:
                     st.success(f"إجمالي عدد الطلاب الذين أتوا الاختبار في {selected_report_grade}: **{len(g_records)} طالب**")
                     
-                    # --- تحديد Star of the Day (أول طالب أنهى الامتحان وحصل على الدرجة النهائية 100%) ---
-                    # ترتيب حسب وقت التسليم (الأقدم أولاً) ثم بالدرجة الأعلى
                     sorted_by_time = sorted(g_records, key=lambda x: x['timestamp'])
                     star_candidate = None
                     for student in sorted_by_time:
@@ -971,7 +991,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         label=f"📥 تحميل كشف درجات ({selected_report_grade}) بصيغة Excel",
                         data=csv_grade_data,
                         file_name=f"Report_{clean_g_name}_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/css" if False else "text/csv"
+                        mime="text/csv"
                     )
                 else:
                     st.info(f"لا توجد أي تسليمات مسجلة لطلاب {selected_report_grade} حتى الآن.")
