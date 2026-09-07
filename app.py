@@ -265,7 +265,7 @@ def load_submissions():
 def record_submission_to_sheet(exam_key, exam_title, student_name, student_phone, student_grade, score, total, percentage):
     clean_phone = re.sub(r'\D', '', student_phone)
     if len(clean_phone) > 10:
-        clean_phone = clean_phone[-10:] # توحيد الأخذ آخر 10 أرقام لتفادي كود الدولة المختلف
+        clean_phone = clean_phone[-10:]
     record_id = f"{exam_key}_{clean_phone}" if clean_phone else f"{exam_key}_{clean_text_for_grading(student_name)}"
     current_time = get_current_egypt_time()
     try:
@@ -389,7 +389,7 @@ def parse_text_locally(text):
             while i < len(lines):
                 sub_line = lines[i]
                 if re.search(r'(?i)^answer\s*:', sub_line):
-                    answer = re.sub(r'(?i)^answer\s*:', '', sub_line).strip()
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', sub_line).strip()
                     i += 1
                     break
                 elif re.search(r'(?i)^options\s*:', sub_line):
@@ -611,11 +611,12 @@ if active_exam and active_exam.get("questions"):
     if 'current_verified_student' not in st.session_state:
         st.markdown("#### 👤 تسجيل دخول الطالب")
         
+        # التنبيه الصارم والواضح للاستخدام برقم هاتف واحد والاسم الرباعي
         st.markdown("""
         <div class="student-gate-box">
             ⚠️ <b>تعليمات هامة جداً قبل بدء الاختبار:</b><br>
-            • يرجى كتابة <b>اسمك رباعياً بوضوح</b>.<br>
-            • يرجى استخدام <b>نفس رقم الهاتف الثابت</b> في كل اختبار، وعدم تغيير الرقم في الاختبارات القادمة لضمان ظهور اسمك في لوحة الشرف وحفظ درجاتك بدقة!
+            • يجب كتابة <b>الاسم رباعياً</b> بوضوح تام.<br>
+            • يجب استخدام <b>نفس رقم الهاتف الثابت</b> في كل اختبار، وعدم تغيير الرقم لتجنب رفض دخولك أو تكرار اسمك!
         </div>
         """, unsafe_allow_html=True)
         
@@ -628,8 +629,13 @@ if active_exam and active_exam.get("questions"):
             clean_phone_input = re.sub(r'\D', '', stu_phone)
             if len(clean_phone_input) > 10:
                 clean_phone_input = clean_phone_input[-10:]
+                
+            name_parts = stu_name.strip().split()
+            
             if not stu_name.strip():
-                st.error("يرجى كتابة الاسم رباعي للمتابعة!")
+                st.error("يرجى كتابة اسم الطالب للمتابعة!")
+            elif len(name_parts) < 4:
+                st.warning("⚠️ تنبيه: يرجى كتابة **الاسم رباعياً** (4 أسماء على الأقل: الأول، الثاني، الثالث، الرابع) لضمان صحة بياناتك في لوحة الشرف!")
             elif not clean_phone_input or len(clean_phone_input) < 9:
                 st.error("يرجى كتابة رقم هاتف صحيح!")
             else:
@@ -650,7 +656,7 @@ if active_exam and active_exam.get("questions"):
                     
                     st.markdown(f"""
                         <div style="text-align: center; margin-top: 15px;">
-                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
+                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 28px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
                                 📲 Send Score to Mrs. Kheffa on WhatsApp
                             </a>
                         </div>
@@ -791,7 +797,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بتوحيد المعرفات ومنع التكرار تماماً.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مشفرة ومؤمنة بالكامل.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -802,9 +808,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             "➕ إضافة اختبار"
         ])
         
-        # TAB 1: CUSTOM ACADEMIC WEEKLY HONOR ROLL (تصفية نهائية تعتمد على دمج الأسماء المتشابهة بالكامل)
+        # TAB 1: CUSTOM ACADEMIC WEEKLY HONOR ROLL (اعتماد المعرف الأساسي برقم الهاتف والاسم الرباعي الدقيق)
         with tab_weekly:
-            st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع (Weekly Honor Roll - تصفية دقيقة للمتكرر)")
+            st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع (Weekly Honor Roll - تطابق رقم الهاتف والاسم الرباعي)")
             subs = load_submissions()
             
             if subs:
@@ -815,16 +821,12 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     
                     raw_name = str(s_data.get('full_name', '')).strip()
                     clean_n = clean_text_for_grading(raw_name)
-                    # استخلاص أول كلمتين أو ثلاث من الاسم لتوحيد "عمر محمود" مع "عمر محمود حسين"
-                    name_words = clean_n.split()
-                    short_base_name = " ".join(name_words[:2]) if len(name_words) >= 2 else clean_n
-                    
                     phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
                     if len(phone_clean) > 10:
                         phone_clean = phone_clean[-10:]
                         
-                    # معرف ذكي يدمج الأسماء التي تبدأ بنفس الجذع أو نفس الهاتف
-                    unique_key = phone_clean if len(phone_clean) >= 9 else short_base_name
+                    # المعرف الفريد الدقيق جداً لمنع أي تداخل
+                    unique_key = f"{phone_clean}_{clean_n}"
                     
                     records.append({
                         "unique_id": unique_key,
@@ -852,7 +854,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 if filter_wk_grade != "جميع المراحل":
                     df_selected_week = df_selected_week[df_selected_week["الصف الدراسي"] == filter_wk_grade]
                 
-                # تصفية قوية جداً تمنع ظهور الشخص أكثر من مرة حتى لو كتب أسماء مختلفة
                 df_selected_week = df_selected_week.sort_values(by=["النسبة", "الدرجة", "وقت التسليم"], ascending=[False, False, True])
                 df_selected_week = df_selected_week.drop_duplicates(subset=["unique_id"], keep="first")
                 
@@ -881,7 +882,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         )
                     
                     st.write("---")
-                    st.markdown(f"#### 📋 كشف المتفوقين المصفى بدقة لـ ({chosen_week}):")
+                    st.markdown(f"#### 📋 كشف المتفوقين بدقة لـ ({chosen_week}):")
                     
                     df_wk_display = df_selected_week.copy()
                     df_wk_display["النسبة المئوية"] = df_wk_display["النسبة"].apply(lambda x: f"{x}%")
@@ -892,9 +893,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     clean_file_label = chosen_week.split(' ')[0] + "_" + chosen_week.split(' ')[1]
                     csv_wk_data = df_selected_week.drop(columns=["week_idx", "unique_id"]).to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
-                        label=f"📥 تحميل شيت أوائل مصفى ({clean_file_label}.csv)",
+                        label=f"📥 تحميل شيت أوائل ({clean_file_label}.csv)",
                         data=csv_wk_data,
-                        file_name=f"Top_Achievers_Clean_{clean_file_label}.csv",
+                        file_name=f"Top_Achievers_{clean_file_label}.csv",
                         mime="text/csv"
                     )
                 else:
@@ -919,13 +920,10 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 for _, s_data in subs.items():
                     raw_name = str(s_data.get('full_name', '')).strip()
                     clean_n = clean_text_for_grading(raw_name)
-                    name_words = clean_n.split()
-                    short_base_name = " ".join(name_words[:2]) if len(name_words) >= 2 else clean_n
-                    
                     phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
                     if len(phone_clean) > 10:
                         phone_clean = phone_clean[-10:]
-                    unique_key = phone_clean if len(phone_clean) >= 9 else short_base_name
+                    unique_key = f"{phone_clean}_{clean_n}"
                     
                     records.append({
                         "unique_id": unique_key,
@@ -987,7 +985,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         )
                     
                     st.write("---")
-                    st.markdown("#### 📋 جدول تفريغ الدرجات المصفى الكامل:")
+                    st.markdown("#### 📋 جدول تفريغ الدرجات الكامل:")
                     
                     df_display = df_filtered.copy()
                     df_display["النسبة المئوية"] = df_display["النسبة"].apply(lambda x: f"{x}%")
@@ -999,9 +997,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     csv_data = df_filtered.drop(columns=["unique_id"]).to_csv(index=False).encode('utf-8-sig')
                     
                     st.download_button(
-                        label=f"📥 تحميل كشف درجات مصفى ({clean_gr_filename}) بصيغة Excel / CSV",
+                        label=f"📥 تحميل كشف درجات ({clean_gr_filename}) بصيغة Excel / CSV",
                         data=csv_data,
-                        file_name=f"Grades_Clean_{clean_gr_filename}_{datetime.now().strftime('%Y%m%d_%I%M%p')}.csv",
+                        file_name=f"Grades_{clean_gr_filename}_{datetime.now().strftime('%Y%m%d_%I%M%p')}.csv",
                         mime="text/csv"
                     )
                 else:
@@ -1011,7 +1009,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
 
         # TAB 3: DEDICATED GRADE REPORT WITH STAR OF THE DAY FEATURE
         with tab_grades_report:
-            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مصفى بدقة ومع تحديد Star of the Day)")
+            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع تحديد Star of the Day)")
             subs_g = load_submissions()
             
             if subs_g:
@@ -1022,13 +1020,10 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     if s_data.get('grade') == selected_report_grade:
                         raw_name = str(s_data.get('full_name', '')).strip()
                         clean_n = clean_text_for_grading(raw_name)
-                        name_words = clean_n.split()
-                        short_base_name = " ".join(name_words[:2]) if len(name_words) >= 2 else clean_n
-                        
                         phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
                         if len(phone_clean) > 10:
                             phone_clean = phone_clean[-10:]
-                        unique_key = phone_clean if len(phone_clean) >= 9 else short_base_name
+                        unique_key = f"{phone_clean}_{clean_n}"
                         
                         g_records.append({
                             "unique_id": unique_key,
@@ -1079,13 +1074,13 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     
                     render_honor_card_widget(
                         selected_report_grade,
-                        "تقرير درجات الطلاب الكامل (مصفى بدقة)",
+                        "تقرير درجات الطلاب الكامل",
                         report_winners,
                         card_id=f"grade-report-{selected_report_grade.replace(' ', '-').replace('(', '').replace(')', '')}"
                     )
                     
                     st.write("---")
-                    st.markdown("#### 📋 جدول البيانات المصفى الكامل:")
+                    st.markdown("#### 📋 جدول البيانات الكامل:")
                     df_grade_only = pd.DataFrame([{
                         "اسم الطالب": x["name"],
                         "رقم الهاتف": x["phone"],
@@ -1101,9 +1096,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     clean_g_name = selected_report_grade.split(' ')[0]
                     csv_grade_data = df_grade_only.to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
-                        label=f"📥 تحميل كشف درجات مصفى ({selected_report_grade}) بصيغة Excel",
+                        label=f"📥 تحميل كشف درجات ({selected_report_grade}) بصيغة Excel",
                         data=csv_grade_data,
-                        file_name=f"Report_Clean_{clean_g_name}_{datetime.now().strftime('%Y%m%d')}.csv",
+                        file_name=f"Report_{clean_g_name}_{datetime.now().strftime('%Y%m%d')}.csv",
                         mime="text/csv"
                     )
                 else:
@@ -1299,7 +1294,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         st.info("الأسئلة سليمة 100% ومطابقة للقواعد. يمكنك الحفظ أو النشر بكل اطمئنان!")
                 else:
                     st.warning("يرجى لصق نص الأسئلة أولاً لفحصها ومعاينتها.")
-            
+    
             col_save_draft, col_save_pub = st.columns([1, 1])
             save_as_draft = col_save_draft.button("📁 حفظ في الأرشيف فقط (بدون تفعيل حالياً)")
             save_and_pub = col_save_pub.button("🚀 حفظ وتفعيل للطلاب فوراً")
