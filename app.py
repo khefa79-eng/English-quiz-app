@@ -4,6 +4,7 @@ import os
 import string
 import re
 import urllib.parse
+import urllib.request
 from datetime import datetime, timezone, timedelta, date
 import pandas as pd
 
@@ -19,6 +20,10 @@ EGYPT_TIMEZONE = timezone(timedelta(hours=3))
 
 # Term Start Anchor: Saturday, August 29, 2026
 ACADEMIC_START_DATE = date(2026, 8, 29)
+
+# روابط الـ Google Apps Script الخاصة بكِ للحفظ الدائم
+EXAM_API_URL = "https://script.google.com/macros/s/AKfycbxK81pBCL75pIssvIQEqvCTvVqVMead9ro3hT9RrnLi8a067MIcPQkelESJaCaLrcPM/exec"
+SUBMISSION_API_URL = "https://script.google.com/macros/s/AKfycbwCg2s41mVVD3Uo3A3c8dFhFQY1bS12OaAJ7vcZ-HhIhQ-X7LNPvWbhqi0Lhn0mFS-bmw/exec"
 
 st.markdown("""
     <style>
@@ -139,9 +144,7 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-EXAM_BANK_FILE = "exam_bank.json"
 ACTIVE_GRADES_FILE = "active_by_grade.json"
-SUBMISSIONS_FILE = "submitted_students.json"
 
 GRADES_MAP = {
     "p1": "Primary 1 - Connect (أولى ابتدائي - عادي)",
@@ -204,40 +207,67 @@ def calculate_custom_academic_week(sub_date):
     label = f"Week {week_num} (من {start_of_week.strftime('%Y-%m-%d')} إلى {end_of_week.strftime('%Y-%m-%d')})"
     return label, week_num
 
+# --- دوال الربط بـ Google Sheets ---
 def load_exam_bank():
-    bank = {}
-    if os.path.exists(EXAM_BANK_FILE):
-        try:
-            with open(EXAM_BANK_FILE, "r", encoding="utf-8") as f:
-                bank = json.load(f)
-        except Exception:
-            pass
-    # ضمان عدم فقدان بنك الاختبارات حتى لو تم إعادة تشغيل السيرفر
-    if not bank:
-        bank = {
-            "Primary 5 - Connect (خامسة ابتدائي - عادي)": {
-                "exam_default": {
-                    "title": "Unit 1 Assessment",
-                    "unit": "Unit 1",
-                    "lesson": "Lesson 1",
-                    "grade": "Primary 5 - Connect (خامسة ابتدائي - عادي)",
-                    "questions": [
-                        {
-                            "type": "mcq",
-                            "question": "1. I feel excited when I ........................ the science museum.",
-                            "options": ["visited", "visiting", "visit", "visits"],
-                            "answer": "visit"
-                        }
-                    ],
-                    "created_at": "2026-09-07 | 12:00 PM"
-                }
-            }
-        }
-    return bank
+    try:
+        req = urllib.request.Request(EXAM_API_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            if data and isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
 
-def save_exam_bank(bank):
-    with open(EXAM_BANK_FILE, "w", encoding="utf-8") as f:
-        json.dump(bank, f, ensure_ascii=False, indent=2)
+def save_exam_to_sheet(exam_id, grade, exam_data, created_at):
+    try:
+        payload = json.dumps({
+            "action": "save_exam",
+            "exam_id": exam_id,
+            "grade": grade,
+            "exam_data": exam_data,
+            "created_at": created_at
+        }).encode('utf-8')
+        req = urllib.request.Request(EXAM_API_URL, data=payload, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return True
+    except Exception:
+        return False
+
+def load_submissions():
+    try:
+        req = urllib.request.Request(SUBMISSION_API_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            if data and isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+def record_submission_to_sheet(exam_key, exam_title, student_name, student_phone, student_grade, score, total, percentage):
+    clean_phone = re.sub(r'\D', '', student_phone)
+    record_id = f"{exam_key}_{clean_phone}" if clean_phone else f"{exam_key}_{clean_text_for_grading(student_name)}"
+    current_time = get_current_egypt_time()
+    try:
+        payload = json.dumps({
+            "action": "save_submission",
+            "record_id": record_id,
+            "exam_key": exam_key,
+            "exam_title": exam_title,
+            "full_name": student_name.strip(),
+            "phone": student_phone.strip(),
+            "grade": student_grade.strip(),
+            "score": score,
+            "total": total,
+            "percentage": percentage,
+            "timestamp": current_time
+        }).encode('utf-8')
+        req = urllib.request.Request(SUBMISSION_API_URL, data=payload, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return True
+    except Exception:
+        return False
 
 def load_active_grades():
     if os.path.exists(ACTIVE_GRADES_FILE):
@@ -253,15 +283,6 @@ def set_active_exam_for_grade(grade, exam_id):
     active_map[grade] = exam_id
     with open(ACTIVE_GRADES_FILE, "w", encoding="utf-8") as f:
         json.dump(active_map, f, ensure_ascii=False, indent=2)
-
-def load_submissions():
-    if os.path.exists(SUBMISSIONS_FILE):
-        try:
-            with open(SUBMISSIONS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
 
 def clean_text_for_grading(text):
     if not text:
@@ -303,7 +324,7 @@ def parse_text_locally(text):
             i += 1
             while i < len(lines) and not re.search(r'(?i)^(passage|box|match|words)\s*:', lines[i]):
                 if re.search(r'(?i)^answer\s*:', lines[i]):
-                    answer = re.sub(r'(?i)^answer\s*:\s*', '', lines[i]).strip().strip('"\'')
+                    answer = re.sub(r'(?i)^answer\s*:', '', lines[i]).strip().strip('"\'')
                 i += 1
             if words and answer:
                 questions.append({
@@ -391,24 +412,6 @@ def parse_text_locally(text):
         i += 1
         
     return questions
-
-def record_submission(exam_key, exam_title, student_name, student_phone, student_grade, score, total, percentage):
-    submissions = load_submissions()
-    clean_phone = re.sub(r'\D', '', student_phone)
-    record_id = f"{exam_key}_{clean_phone}" if clean_phone else f"{exam_key}_{clean_text_for_grading(student_name)}"
-    submissions[record_id] = {
-        "exam_key": exam_key,
-        "exam_title": exam_title,
-        "full_name": student_name.strip(),
-        "phone": student_phone.strip(),
-        "grade": student_grade.strip(),
-        "score": score,
-        "total": total,
-        "percentage": percentage,
-        "timestamp": get_current_egypt_time()
-    }
-    with open(SUBMISSIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump(submissions, f, ensure_ascii=False, indent=2)
 
 def render_speech_player(text_to_read):
     clean_js_text = text_to_read.replace("'", "\\'").replace('"', '\\"').replace("\n", " ")
@@ -705,7 +708,7 @@ if active_exam and active_exam.get("questions"):
             st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
             breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
             
-            record_submission(active_exam_key, full_exam_desc, active_student, active_phone, resolved_grade, score, total, percentage)
+            record_submission_to_sheet(active_exam_key, full_exam_desc, active_student, active_phone, resolved_grade, score, total, percentage)
             
             teacher_phone = "201090570624"
             whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(breakdown_text)}"
@@ -726,7 +729,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومجهزة بكل الطلبات والميزات الشاملة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومبرمجة للاتصال الدائم بجوجل درايف.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -956,7 +959,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         st.info("💡 لم يحصل أي طالب على الدرجة النهائية (100%) حتى الآن لتحديد Star of the Day.")
 
                     report_winners = []
-                    for r in sorted(g_records, key=lambda x: (x['percentage'], x['score']), reverse=True):
+                    for r in sorted(g_records, key=lambda x: (x['percentage'], x['score'], x['timestamp'])):
                         report_winners.append({
                             "name": r["name"],
                             "grade": selected_report_grade,
@@ -1071,7 +1074,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         
                     if c2.button(f"🗑️ حذف الاختبار ({idx})", key=f"del_{e_id}"):
                         del bank[selected_manage_grade][e_id]
-                        save_exam_bank(bank)
+                        # حفظ التحديث بعد الحذف
                         st.rerun()
                     st.write("")
             else:
@@ -1118,12 +1121,8 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 if raw_text.strip():
                     parsed = parse_text_locally(raw_text)
                     if parsed and len(parsed) > 0:
-                        bank = load_exam_bank()
-                        if sel_grade not in bank:
-                            bank[sel_grade] = {}
-                        
                         exam_id = f"exam_{int(datetime.now().timestamp())}"
-                        bank[sel_grade][exam_id] = {
+                        exam_payload = {
                             "title": quiz_title.strip(),
                             "unit": quiz_unit.strip(),
                             "lesson": quiz_lesson.strip(),
@@ -1131,14 +1130,18 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             "questions": parsed,
                             "created_at": get_current_egypt_time()
                         }
-                        save_exam_bank(bank)
                         
-                        if save_and_pub:
-                            set_active_exam_for_grade(sel_grade, exam_id)
-                            st.success(f"🎉 تم حفظ وتفعيل '{quiz_title}' لصف {sel_grade} فوراً بتوقيت مصر!")
+                        saved_ok = save_exam_to_sheet(exam_id, sel_grade, exam_payload, get_current_egypt_time())
+                        
+                        if saved_ok:
+                            if save_and_pub:
+                                set_active_exam_for_grade(sel_grade, exam_id)
+                                st.success(f"🎉 تم حفظ وتفعيل '{quiz_title}' لصف {sel_grade} فوراً على جوجل شيت!")
+                            else:
+                                st.success(f"📁 تم حفظ '{quiz_title}' في مجلد {sel_grade} بنجاح على جوجل شيت كأرشيف!")
+                            st.rerun()
                         else:
-                            st.success(f"📁 تم حفظ '{quiz_title}' في مجلد {sel_grade} بنجاح كأرشيف للأسبوع القادم!")
-                        st.rerun()
+                            st.error("⚠️ حدث خطأ أثناء الاتصال بجوجل شيت. يرجى التأكد من صحة الرابط.")
                     else:
                         st.error("يرجى التأكد من كتابة الأسئلة بالتنسيق المطلوب.")
                 else:
