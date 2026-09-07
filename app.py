@@ -419,7 +419,6 @@ def parse_text_locally(text):
         
     return questions
 
-# --- نظام التدقيق الذكي للأسئلة (Smart Validation) ---
 def validate_quiz_questions(questions):
     errors = []
     if not questions:
@@ -436,8 +435,7 @@ def validate_quiz_questions(questions):
             opts = q.get('options', [])
             if not opts or len(opts) < 2:
                 errors.append(f"السؤال رقم ({idx}) يحتوي على أقل من خيارين صحيحين.")
-            elif q_type != "matching" and ans not in opts:
-                # التحقق إذا كانت الإجابة تطابق أحد الخيارات
+            elif q_type != "matching":
                 match_found = any(clean_text_for_grading(str(ans)) == clean_text_for_grading(str(opt)) for opt in opts)
                 if not match_found:
                     errors.append(f"السؤال رقم ({idx}): الإجابة النموذجية ('{ans}') غير موجودة ضمن الخيارات المحددة!")
@@ -446,15 +444,10 @@ def validate_quiz_questions(questions):
             box = q.get('box_words', [])
             if not box:
                 errors.append(f"السؤال رقم ({idx}) يتبع نظام صندوق الكلمات ولكنه فارغ.")
-            elif ans not in box:
+            else:
                 match_found = any(clean_text_for_grading(str(ans)) == clean_text_for_grading(str(b)) for b in box)
                 if not match_found:
                     errors.append(f"السؤال رقم ({idx}): الإجابة ('{ans}') غير موجودة في صندوق الكلمات المرفق!")
-
-        elif q_type == "reorder":
-            scrambled = q.get('scrambled_words', [])
-            if not scrambled:
-                errors.append(f"السؤال رقم ({idx}) إعادة ترتيب الكلمات فارغ من الكلمات المبعثرة.")
                 
     return errors
 
@@ -774,13 +767,14 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومبرمجة للاتصال الدائم بجوجل درايف مع التدقيق الذكي.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومبرمجة للاتصال الدائم بجوجل درايف مع التدقيق الذكي وحفظ الأنشطة.")
         
-        tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_new = st.tabs([
+        tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
             "📊 الدرجات العامة", 
             "🏫 تقرير كل صف (Excel وصورة)",
-            "📚 بنك الاختبارات", 
+            "📚 بنك الاختبارات",
+            "📄 تحميل كويز وموديل الإجابة PDF",
             "➕ إضافة اختبار"
         ])
         
@@ -1124,7 +1118,54 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
 
-        # TAB 5: ADD NEW EXAM WITH SMART VALIDATION FEATURE
+        # TAB 5: DOWNLOAD QUIZ & MODEL ANSWERS AS FORMATTED TEXT/PDF READY
+        with tab_pdf:
+            st.markdown("### 📄 تحميل كويز وموديل الإجابة للمناقشة والشرح مع الطلاب")
+            pdf_grade = st.selectbox("اختر الصف الدراسي للاختبار:", GRADES_LIST, key="pdf_grade_sel")
+            bank_pdf = load_exam_bank()
+            grade_exams_pdf = bank_pdf.get(pdf_grade, {})
+            
+            if grade_exams_pdf:
+                exam_titles_map = {f"[{e_info.get('unit','')}-{e_info.get('lesson','')}] {e_info.get('title','')} ({clean_time_display(e_info.get('created_at',''))})": e_id for e_id, e_info in grade_exams_pdf.items()}
+                chosen_exam_label = st.selectbox("اختر الاختبار المطلوب:", list(exam_titles_map.keys()), key="pdf_exam_sel")
+                
+                if chosen_exam_label:
+                    target_e_id = exam_titles_map[chosen_exam_label]
+                    selected_exam_obj = grade_exams_pdf[target_e_id]
+                    
+                    # معاينة شكل الديباجة والأسئلة والموديل أنسر قبل التحميل
+                    st.markdown("---")
+                    preview_text_lines = []
+                    preview_text_lines.append("==================================================")
+                    preview_text_lines.append("🎓 ENGLISH ASSESSMENT & MODEL ANSWERS")
+                    preview_text_lines.append("Mrs. Kheffa Eletreby — Senior English Teacher")
+                    preview_text_lines.append("📱 WhatsApp: 01090570624")
+                    preview_text_lines.append(f"📚 Grade: {pdf_grade}")
+                    preview_text_lines.append(f"📝 Quiz: {selected_exam_obj.get('title')} ({selected_exam_obj.get('unit')} - {selected_exam_obj.get('lesson')})")
+                    preview_text_lines.append("==================================================\n")
+                    
+                    for q_idx, q_item in enumerate(selected_exam_obj.get('questions', []), 1):
+                        preview_text_lines.append(f"Q{q_idx}: {q_item.get('question', q_item.get('premise', ''))}")
+                        if q_item.get('options'):
+                            preview_text_lines.append(f"   Options: {', '.join(q_item.get('options'))}")
+                        if q_item.get('box_words'):
+                            preview_text_lines.append(f"   Box Words: {', '.join(q_item.get('box_words'))}")
+                        preview_text_lines.append(f"   👉 MODEL ANSWER: {q_item.get('answer')}\n")
+                        
+                    full_doc_text = "\n".join(preview_text_lines)
+                    
+                    st.text_area("معاينة المستند قبل التحميل:", value=full_doc_text, height=300)
+                    
+                    st.download_button(
+                        label="📥 تحميل ملف الإجابات والشرح للطباعة (Text / Document)",
+                        data=full_doc_text.encode('utf-8-sig'),
+                        file_name=f"Quiz_Model_Answers_{pdf_grade.split(' ')[0]}_{datetime.now().strftime('%Y%m%d')}.txt",
+                        mime="text/plain"
+                    )
+            else:
+                st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد ملفها.")
+
+        # TAB 6: ADD NEW EXAM WITH SMART VALIDATION FEATURE
         with tab_new:
             st.markdown("#### 📝 تجهيز ومعاينة وفحص ذكي واختبار جديد")
             c_g, c_u, c_l = st.columns([2, 1, 1])
@@ -1169,7 +1210,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             if save_as_draft or save_and_pub:
                 if raw_text.strip():
                     parsed = parse_text_locally(raw_text)
-                    # فحص أخير قبل الحفظ لمنع أي خطأ نهائياً
                     final_check_errors = validate_quiz_questions(parsed)
                     if final_check_errors:
                         st.error("⚠️ لا يمكن الحفظ لوجود أخطاء في الأسئلة. يرجى الضغط على زر الفحص الذكي لمعرفة الأخطاء وتصحيحها.")
