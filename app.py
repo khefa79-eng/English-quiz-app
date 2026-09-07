@@ -69,6 +69,17 @@ st.markdown("""
         margin: 15px 0;
         color: #1E40AF;
     }
+    .student-gate-box {
+        background-color: #FEF3C7;
+        border: 2px dashed #F59E0B;
+        padding: 14px;
+        border-radius: 10px;
+        margin-bottom: 16px;
+        color: #92400E;
+        font-size: 0.95rem;
+        font-weight: 600;
+        line-height: 1.6;
+    }
     .card-active {
         background: #F0FDF4;
         border: 2.5px solid #22C55E;
@@ -376,7 +387,7 @@ def parse_text_locally(text):
             while i < len(lines):
                 sub_line = lines[i]
                 if re.search(r'(?i)^answer\s*:', sub_line):
-                    answer = re.sub(r'(?i)^answer\s*:\s*', '', sub_line).strip()
+                    answer = re.sub(r'(?i)^answer\s*:', '', sub_line).strip()
                     i += 1
                     break
                 elif re.search(r'(?i)^options\s*:', sub_line):
@@ -597,6 +608,15 @@ if active_exam and active_exam.get("questions"):
     
     if 'current_verified_student' not in st.session_state:
         st.markdown("#### 👤 تسجيل دخول الطالب")
+        
+        st.markdown("""
+        <div class="student-gate-box">
+            ⚠️ <b>تعليمات هامة جداً قبل بدء الاختبار:</b><br>
+            • يرجى كتابة <b>اسمك رباعياً بوضوح</b>.<br>
+            • يرجى استخدام <b>نفس رقم الهاتف الثابت</b> في كل اختبار، وعدم تغيير الرقم في الاختبارات القادمة لضمان ظهور اسمك في لوحة الشرف وحفظ درجاتك بدقة!
+        </div>
+        """, unsafe_allow_html=True)
+        
         stu_name = st.text_input("اسم الطالب رباعي (Student Full Name):", key="gate_student_name")
         stu_phone = st.text_input("رقم تليفون الطالب أو ولي الأمر (Phone Number):", key="gate_student_phone")
         
@@ -767,7 +787,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومبرمجة للاتصال الدائم بجوجل درايف مع التدقيق الذكي وحفظ الأنشطة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بنظام تصفية الطلاب، التدقيق الذكي، وتوليد ملفات الـ PDF الملونة.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -778,9 +798,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             "➕ إضافة اختبار"
         ])
         
-        # TAB 1: CUSTOM ACADEMIC WEEKLY HONOR ROLL
+        # TAB 1: CUSTOM ACADEMIC WEEKLY HONOR ROLL (مفلتر بدون تكرار الطلاب)
         with tab_weekly:
-            st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع (Weekly Honor Roll)")
+            st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع (Weekly Honor Roll - بدون تكرار)")
             subs = load_submissions()
             
             if subs:
@@ -788,8 +808,12 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 for _, s_data in subs.items():
                     d_obj = extract_date_obj(s_data.get('timestamp', ''))
                     week_label, week_sort_idx = calculate_custom_academic_week(d_obj)
-                        
+                    
+                    phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
+                    name_clean = clean_text_for_grading(s_data.get('full_name', ''))
+                    
                     records.append({
+                        "unique_id": phone_clean if len(phone_clean) >= 10 else name_clean,
                         "اسم الطالب": s_data.get('full_name', ''),
                         "الصف الدراسي": s_data.get('grade', ''),
                         "رقم الهاتف": s_data.get('phone', ''),
@@ -813,7 +837,10 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 df_selected_week = df_weekly_all[df_weekly_all["week_label"] == chosen_week]
                 if filter_wk_grade != "جميع المراحل":
                     df_selected_week = df_selected_week[df_selected_week["الصف الدراسي"] == filter_wk_grade]
-                    
+                
+                df_selected_week = df_selected_week.sort_values(by=["النسبة", "الدرجة", "وقت التسليم"], ascending=[False, False, True])
+                df_selected_week = df_selected_week.drop_duplicates(subset=["unique_id"], keep="first")
+                
                 df_selected_week = df_selected_week.sort_values(by=["النسبة", "الدرجة"], ascending=[False, False])
                 
                 if not df_selected_week.empty:
@@ -839,20 +866,20 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         )
                     
                     st.write("---")
-                    st.markdown(f"#### 📋 كشف المتفوقين المسجل لـ ({chosen_week}):")
+                    st.markdown(f"#### 📋 كشف المتفوقين المصفى بدون تكرار لـ ({chosen_week}):")
                     
                     df_wk_display = df_selected_week.copy()
                     df_wk_display["النسبة المئوية"] = df_wk_display["النسبة"].apply(lambda x: f"{x}%")
-                    df_wk_display = df_wk_display.drop(columns=["النسبة", "week_idx", "week_label"])
+                    df_wk_display = df_wk_display.drop(columns=["النسبة", "week_idx", "week_label", "unique_id"])
                     
                     st.dataframe(df_wk_display, use_container_width=True)
                     
                     clean_file_label = chosen_week.split(' ')[0] + "_" + chosen_week.split(' ')[1]
-                    csv_wk_data = df_selected_week.drop(columns=["week_idx"]).to_csv(index=False).encode('utf-8-sig')
+                    csv_wk_data = df_selected_week.drop(columns=["week_idx", "unique_id"]).to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
-                        label=f"📥 تحميل شيت أوائل ({clean_file_label}.csv)",
+                        label=f"📥 تحميل شيت أوائل مصفى ({clean_file_label}.csv)",
                         data=csv_wk_data,
-                        file_name=f"Top_Achievers_{clean_file_label}.csv",
+                        file_name=f"Top_Achievers_Clean_{clean_file_label}.csv",
                         mime="text/csv"
                     )
                 else:
@@ -875,7 +902,10 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 
                 records = []
                 for _, s_data in subs.items():
+                    phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
+                    name_clean = clean_text_for_grading(s_data.get('full_name', ''))
                     records.append({
+                        "unique_id": phone_clean if len(phone_clean) >= 10 else name_clean,
                         "اسم الطالب": s_data.get('full_name', ''),
                         "الصف الدراسي": s_data.get('grade', ''),
                         "رقم الهاتف": s_data.get('phone', ''),
@@ -910,6 +940,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         chosen_exam_title = available_exams[0]
                 
                 df_filtered = df_filtered.sort_values(by=["النسبة", "الدرجة"], ascending=[False, False])
+                df_filtered = df_filtered.drop_duplicates(subset=["unique_id"], keep="first")
                 
                 if not df_filtered.empty:
                     top_threshold = df_filtered["النسبة"].max()
@@ -933,21 +964,21 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         )
                     
                     st.write("---")
-                    st.markdown("#### 📋 جدول تفريغ الدرجات الكامل:")
+                    st.markdown("#### 📋 جدول تفريغ الدرجات المصفى الكامل:")
                     
                     df_display = df_filtered.copy()
                     df_display["النسبة المئوية"] = df_display["النسبة"].apply(lambda x: f"{x}%")
-                    df_display = df_display.drop(columns=["النسبة"])
+                    df_display = df_display.drop(columns=["النسبة", "unique_id"])
                     
                     st.dataframe(df_display, use_container_width=True)
                     
                     clean_gr_filename = filter_grade.split(' ')[0] if filter_grade != "-- جميع المراحل معاً --" else "All_Grades"
-                    csv_data = df_filtered.to_csv(index=False).encode('utf-8-sig')
+                    csv_data = df_filtered.drop(columns=["unique_id"]).to_csv(index=False).encode('utf-8-sig')
                     
                     st.download_button(
-                        label=f"📥 تحميل كشف درجات ({clean_gr_filename}) بصيغة Excel / CSV",
+                        label=f"📥 تحميل كشف درجات مصفى ({clean_gr_filename}) بصيغة Excel / CSV",
                         data=csv_data,
-                        file_name=f"Grades_{clean_gr_filename}_{datetime.now().strftime('%Y%m%d_%I%M%p')}.csv",
+                        file_name=f"Grades_Clean_{clean_gr_filename}_{datetime.now().strftime('%Y%m%d_%I%M%p')}.csv",
                         mime="text/csv"
                     )
                 else:
@@ -955,9 +986,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
 
-        # TAB 3: DEDICATED GRADE REPORT WITH STAR OF THE DAY FEATURE
+        # TAB 3: DEDICATED GRADE REPORT WITH STAR OF THE DAY FEATURE (بدون تكرار)
         with tab_grades_report:
-            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع تحديد Star of the Day)")
+            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مصفى بدون تكرار ومع تحديد Star of the Day)")
             subs_g = load_submissions()
             
             if subs_g:
@@ -966,7 +997,10 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 g_records = []
                 for _, s_data in subs_g.items():
                     if s_data.get('grade') == selected_report_grade:
+                        phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
+                        name_clean = clean_text_for_grading(s_data.get('full_name', ''))
                         g_records.append({
+                            "unique_id": phone_clean if len(phone_clean) >= 10 else name_clean,
                             "name": s_data.get('full_name', ''),
                             "phone": s_data.get('phone', ''),
                             "exam": s_data.get('exam_title', s_data.get('exam_key', '')),
@@ -977,9 +1011,15 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         })
                 
                 if g_records:
-                    st.success(f"إجمالي عدد الطلاب الذين أتوا الاختبار في {selected_report_grade}: **{len(g_records)} طالب**")
+                    df_g_raw = pd.DataFrame(g_records)
+                    df_g_raw = df_g_raw.sort_values(by=["percentage", "score", "timestamp"], ascending=[False, False, True])
+                    df_g_raw = df_g_raw.drop_duplicates(subset=["unique_id"], keep="first")
                     
-                    sorted_by_time = sorted(g_records, key=lambda x: x['timestamp'])
+                    g_records_clean = df_g_raw.to_dict('records')
+                    
+                    st.success(f"إجمالي عدد الطلاب الفريدين في {selected_report_grade}: **{len(g_records_clean)} طالب**")
+                    
+                    sorted_by_time = sorted(g_records_clean, key=lambda x: x['timestamp'])
                     star_candidate = None
                     for student in sorted_by_time:
                         if student['percentage'] == 100.0:
@@ -998,7 +1038,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         st.info("💡 لم يحصل أي طالب على الدرجة النهائية (100%) حتى الآن لتحديد Star of the Day.")
 
                     report_winners = []
-                    for r in sorted(g_records, key=lambda x: (x['percentage'], x['score'], x['timestamp'])):
+                    for r in sorted(g_records_clean, key=lambda x: (x['percentage'], x['score'], x['timestamp']), reverse=True):
                         report_winners.append({
                             "name": r["name"],
                             "grade": selected_report_grade,
@@ -1008,13 +1048,13 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     
                     render_honor_card_widget(
                         selected_report_grade,
-                        "تقرير درجات الطلاب الكامل",
+                        "تقرير درجات الطلاب الكامل (مصفى)",
                         report_winners,
                         card_id=f"grade-report-{selected_report_grade.replace(' ', '-').replace('(', '').replace(')', '')}"
                     )
                     
                     st.write("---")
-                    st.markdown("#### 📋 جدول البيانات الكامل:")
+                    st.markdown("#### 📋 جدول البيانات المصفى الكامل:")
                     df_grade_only = pd.DataFrame([{
                         "اسم الطالب": x["name"],
                         "رقم الهاتف": x["phone"],
@@ -1023,16 +1063,16 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         "المجموع": x["total"],
                         "النسبة المئوية (%)": f"{x['percentage']}%",
                         "وقت التسليم": clean_time_display(x["timestamp"])
-                    } for x in g_records])
+                    } for x in g_records_clean])
                     
                     st.dataframe(df_grade_only, use_container_width=True)
                     
                     clean_g_name = selected_report_grade.split(' ')[0]
                     csv_grade_data = df_grade_only.to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
-                        label=f"📥 تحميل كشف درجات ({selected_report_grade}) بصيغة Excel",
+                        label=f"📥 تحميل كشف درجات مصفى ({selected_report_grade}) بصيغة Excel",
                         data=csv_grade_data,
-                        file_name=f"Report_{clean_g_name}_{datetime.now().strftime('%Y%m%d')}.csv",
+                        file_name=f"Report_Clean_{clean_g_name}_{datetime.now().strftime('%Y%m%d')}.csv",
                         mime="text/csv"
                     )
                 else:
@@ -1118,9 +1158,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
 
-        # TAB 5: DOWNLOAD QUIZ & MODEL ANSWERS AS FORMATTED TEXT/PDF READY
+        # TAB 5: BEAUTIFUL PRINTABLE/PDF EXPORT FOR CLASSROOM DISCUSSION
         with tab_pdf:
-            st.markdown("### 📄 تحميل كويز وموديل الإجابة للمناقشة والشرح مع الطلاب")
+            st.markdown("### 📄 المعاينة البصرية والطباعة بصيغة PDF (مناقشة الشرح مع الطلاب)")
             pdf_grade = st.selectbox("اختر الصف الدراسي للاختبار:", GRADES_LIST, key="pdf_grade_sel")
             bank_pdf = load_exam_bank()
             grade_exams_pdf = bank_pdf.get(pdf_grade, {})
@@ -1133,37 +1173,52 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     target_e_id = exam_titles_map[chosen_exam_label]
                     selected_exam_obj = grade_exams_pdf[target_e_id]
                     
-                    # معاينة شكل الديباجة والأسئلة والموديل أنسر قبل التحميل
-                    st.markdown("---")
-                    preview_text_lines = []
-                    preview_text_lines.append("==================================================")
-                    preview_text_lines.append("🎓 ENGLISH ASSESSMENT & MODEL ANSWERS")
-                    preview_text_lines.append("Mrs. Kheffa Eletreby — Senior English Teacher")
-                    preview_text_lines.append("📱 WhatsApp: 01090570624")
-                    preview_text_lines.append(f"📚 Grade: {pdf_grade}")
-                    preview_text_lines.append(f"📝 Quiz: {selected_exam_obj.get('title')} ({selected_exam_obj.get('unit')} - {selected_exam_obj.get('lesson')})")
-                    preview_text_lines.append("==================================================\n")
-                    
+                    # بناء محتوى HTML منمّق وملون احترافي للطباعة والحفظ كـ PDF
+                    questions_html = ""
                     for q_idx, q_item in enumerate(selected_exam_obj.get('questions', []), 1):
-                        preview_text_lines.append(f"Q{q_idx}: {q_item.get('question', q_item.get('premise', ''))}")
-                        if q_item.get('options'):
-                            preview_text_lines.append(f"   Options: {', '.join(q_item.get('options'))}")
-                        if q_item.get('box_words'):
-                            preview_text_lines.append(f"   Box Words: {', '.join(q_item.get('box_words'))}")
-                        preview_text_lines.append(f"   👉 MODEL ANSWER: {q_item.get('answer')}\n")
+                        q_txt = q_item.get('question', q_item.get('premise', ''))
+                        ans_txt = q_item.get('answer', '')
                         
-                    full_doc_text = "\n".join(preview_text_lines)
+                        opts_html = ""
+                        if q_item.get('options'):
+                            opts_html = "<div style='margin-top:6px; color:#475569; font-size:0.95rem;'><b>Options:</b> " + ", ".join(q_item.get('options')) + "</div>"
+                        elif q_item.get('box_words'):
+                            opts_html = "<div style='margin-top:6px; color:#475569; font-size:0.95rem;'><b>Box Words:</b> [ " + " — ".join(q_item.get('box_words')) + " ]</div>"
+                            
+                        questions_html += f"""
+                        <div style="background:#F8FAFC; border:1px solid #CBD5E1; border-radius:10px; padding:15px; margin-bottom:15px; page-break-inside: avoid;">
+                            <div style="font-size:1.1rem; font-weight:bold; color:#1E3A8A; margin-bottom:6px;">Q{q_idx}: {q_txt}</div>
+                            {opts_html}
+                            <div style="margin-top:10px; background:#DCFCE7; border:1px solid #22C55E; color:#166534; padding:8px 12px; border-radius:6px; font-weight:bold; font-size:0.98rem;">
+                                👉 Model Answer: <span style="color:#15803D;">{ans_txt}</span>
+                            </div>
+                        </div>
+                        """
+                        
+                    printable_html = f"""
+                    <div style="direction: ltr; font-family: Arial, sans-serif; background: white; padding: 25px; border-radius: 14px; border: 2px solid #3B82F6; max-width: 800px; margin: 0 auto;">
+                        <div style="background: linear-gradient(135deg, #1E3A8A, #3B82F6); color: white; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
+                            <h2 style="margin:0; font-size:1.5rem;">🎓 ENGLISH ASSESSMENT & MODEL ANSWERS</h2>
+                            <h3 style="margin:5px 0; font-size:1.1rem; color:#E0E7FF;">Mrs. Kheffa Eletreby — Senior English Teacher</h3>
+                            <p style="margin:0; font-size:0.9rem; color:#DBEAFE;">📱 WhatsApp: <b>01090570624</b> | 📚 Grade: <b>{pdf_grade}</b></p>
+                            <p style="margin:5px 0 0 0; font-size:0.95rem; color:#FEF08A;">📝 Quiz: <b>{selected_exam_obj.get('title')}</b> ({selected_exam_obj.get('unit')} - {selected_exam_obj.get('lesson')})</p>
+                        </div>
+                        <div>
+                            {questions_html}
+                        </div>
+                        <div style="text-align:center; margin-top:20px; font-size:0.85rem; color:#64748B; border-top:1px dashed #CBD5E1; padding-top:10px;">
+                            🌟 بالتوفيق دائماً لطلابنا المتميزين — Mrs. Kheffa Eletreby 🌟
+                        </div>
+                    </div>
+                    """
                     
-                    st.text_area("معاينة المستند قبل التحميل:", value=full_doc_text, height=300)
+                    st.markdown("### 👀 معاينة التصميم الملون قبل الطباعة:")
+                    st.components.v1.html(printable_html, height=600, scrolling=True)
                     
-                    st.download_button(
-                        label="📥 تحميل ملف الإجابات والشرح للطباعة (Text / Document)",
-                        data=full_doc_text.encode('utf-8-sig'),
-                        file_name=f"Quiz_Model_Answers_{pdf_grade.split(' ')[0]}_{datetime.now().strftime('%Y%m%d')}.txt",
-                        mime="text/plain"
-                    )
+                    st.markdown("---")
+                    st.info("💡 **للحفظ بصيغة PDF أو الطباعة المباشرة:** اضغطي على زر المعاينة بالأعلى بزر الماوس الأيمن واختاري **Print (طباعة)**، ثم قومي باختيار **Save as PDF** لحفظ الملف كـ PDF منمق وجاهز للشرح!")
             else:
-                st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد ملفها.")
+                st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد مستندها.")
 
         # TAB 6: ADD NEW EXAM WITH SMART VALIDATION FEATURE
         with tab_new:
@@ -1176,7 +1231,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
             raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا:", height=180, key="new_raw_text")
             
-            # --- مرحلة التدقيق والمعاينة الذكية (Smart Validation) ---
             if st.button("🔍 فحص ومعاينة ذكية للأسئلة (Smart Validation)", key="preview_btn"):
                 if raw_text.strip():
                     preview_parsed = parse_text_locally(raw_text)
