@@ -432,36 +432,46 @@ def parse_text_locally(text):
         
     return questions
 
-# --- نظام التنظيف والاستبعاد الذكي التلقائي (Auto-Clean Validation) ---
+# --- نظام الفلترة والحظر التام للأسئلة التجريبية والتالفة (Anti-Dummy Filter) ---
 def auto_clean_quiz_questions(questions):
     valid_questions = []
     removed_count = 0
     
+    # كلمات محظورة تدل على أن السؤال تجريبي أو تالف
+    dummy_keywords = ['word1', 'word2', 'word3', 'word4', 'الخيار a', 'الخيار b', 'الخيار c', 'الطرف الأول من السؤال']
+    
     for q in questions:
-        q_type = q.get('type', 'mcq')
-        ans = q.get('answer', '')
+        q_text = str(q.get('question', q.get('premise', ''))).lower()
+        ans = str(q.get('answer', '')).lower()
+        opts = [str(o).lower() for o in q.get('options', [])]
         
-        # تحقق من وجود إجابة
-        if not ans or str(ans).strip() == "":
+        # تحقق من وجود كلمات وهمية تجريبية
+        is_dummy = False
+        for dk in dummy_keywords:
+            if dk in q_text or dk in ans or any(dk in opt for opt in opts):
+                is_dummy = True
+                break
+                
+        if is_dummy or not ans or ans.strip() == "":
             removed_count += 1
             continue
             
         is_valid = True
+        q_type = q.get('type', 'mcq')
         if q_type in ["mcq", "reading", "matching"]:
-            opts = q.get('options', [])
             if not opts or len(opts) < 2:
                 is_valid = False
             elif q_type != "matching":
-                match_found = any(clean_text_for_grading(str(ans)) == clean_text_for_grading(str(opt)) for opt in opts)
+                match_found = any(clean_text_for_grading(ans) == clean_text_for_grading(opt) for opt in opts)
                 if not match_found:
                     is_valid = False
 
         elif q_type == "box_complete":
-            box = q.get('box_words', [])
+            box = [str(b).lower() for b in q.get('box_words', [])]
             if not box:
                 is_valid = False
             else:
-                match_found = any(clean_text_for_grading(str(ans)) == clean_text_for_grading(str(b)) for b in box)
+                match_found = any(clean_text_for_grading(ans) == clean_text_for_grading(b) for b in box)
                 if not match_found:
                     is_valid = False
                     
@@ -804,7 +814,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بنظام الاستبعاد الذكي للأخطاء والتنظيف التلقائي.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومحمية ضد الأسئلة الوهمية.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -1264,30 +1274,27 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد مستندها.")
 
-        # TAB 6: ADD NEW EXAM WITH AUTO-CLEAN VALIDATION FEATURE
+        # TAB 6: ADD NEW EXAM WITH ANTI-DUMMY AUTO-CLEAN FILTER
         with tab_new:
-            st.markdown("#### 📝 تجهيز ومعاينة وفحص واستبعاد تلقائي للأخطاء")
+            st.markdown("#### 📝 تجهيز ومعاينة وفحص واستبعاد تلقائي للأسئلة الوهمية")
             c_g, c_u, c_l = st.columns([2, 1, 1])
             sel_grade = c_g.selectbox("الصف الدراسي المستهدف:", GRADES_LIST, key="new_exam_grade")
             quiz_unit = c_u.text_input("الوحدة (Unit):", "Unit 1", key="exam_unit_input")
             quiz_lesson = c_l.text_input("الدرس (Lesson):", "Lesson 1", key="exam_lesson_input")
             
-            quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
+            quiz_title = c_t = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
             raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا:", height=180, key="new_raw_text")
             
-            # --- مرحلة الفحص والتنظيف التلقائي (Auto-Clean Validation) ---
-            if st.button("🔍 فحص واستبعاد الأسئلة التالفة تلقائياً (Auto-Clean)", key="preview_btn"):
+            # --- مرحلة الفحص والحظر التام للأسئلة التجريبية (Anti-Dummy Auto-Clean) ---
+            if st.button("🔍 فحص واستبعاد الأسئلة الوهمية تلقائياً (Anti-Dummy)", key="preview_btn"):
                 if raw_text.strip():
                     raw_parsed = parse_text_locally(raw_text)
                     cleaned_parsed, removed_count = auto_clean_quiz_questions(raw_parsed)
                     
-                    # حفظ الأسئلة الصالحة في الـ session_state لاستخدامها عند الحفظ
-                    st.session_state['ready_to_save_questions'] = cleaned_parsed
-                    
                     if removed_count > 0:
-                        st.warning(f"⚠️ تنبيه: تم العثور على أخطاء في ({removed_count}) سؤال وتم **حذفها واستبعادها تلقائياً** ليبقى الاختبار سليماً 100%!")
+                        st.warning(f"⚠️ تنبيه: تم رشف وحذف ({removed_count}) سؤال وهمي أو تجريبي (مثل word1 أو الخيار A) واستبعادهم تماماً ليبقى الكويز نظيفاً 100%!")
                     else:
-                        st.success("🎉 مبروك! جميع الأسئلة سليمة 100% واجتازت الفحص بنجاح تام.")
+                        st.success("🎉 مبروك! جميع الأسئلة سليمة 100% وخالية من أي كلمات وهمية.")
                         
                     if cleaned_parsed:
                         st.markdown("---")
@@ -1300,7 +1307,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                                 st.write(f"صندوق الكلمات: {p_q.get('box_words')}")
                             st.markdown(f"🟢 **الإجابة النموذجية المسجلة:** `{p_q.get('answer')}`")
                             st.write("---")
-                        st.info("الأسئلة جاهزة تماماً وآمنة للنشر أو الحفظ!")
+                        st.info("الأسئلة نظيفة وآمنة تماماً وجاهزة للنشر للطلاب!")
                     else:
                         st.error("⚠️ عذراً، لم تبق أي أسئلة صالحة بعد التنظيف. يرجى مراجعة النص المنسوخ.")
                 else:
@@ -1312,7 +1319,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             
             if save_as_draft or save_and_pub:
                 if raw_text.strip():
-                    # استخدام الأسئلة الصالحة التي تم تنظيفها مسبقاً أو تنظيفها الآن فوراً
                     raw_parsed = parse_text_locally(raw_text)
                     parsed, _ = auto_clean_quiz_questions(raw_parsed)
                     
@@ -1332,9 +1338,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         if saved_ok:
                             if save_and_pub:
                                 set_active_exam_for_grade(sel_grade, exam_id)
-                                st.success(f"🎉 تم تنظيف وحفظ وتفعيل '{quiz_title}' لصف {sel_grade} بنجاح تام على جوجل شيت بدون أي أخطاء!")
+                                st.success(f"🎉 تم فحص وحفظ وتفعيل '{quiz_title}' لصف {sel_grade} بنجاح تام على جوجل شيت بدون أي أخطاء أو كلمات وهمية!")
                             else:
-                                st.success(f"📁 تم تنظيف وحفظ '{quiz_title}' في أرشيف صف {sel_grade} بنجاح على جوجل شيت!")
+                                st.success(f"📁 تم فحص وحفظ '{quiz_title}' في أرشيف صف {sel_grade} بنجاح على جوجل شيت!")
                             st.rerun()
                         else:
                             st.error("⚠️ حدث خطأ أثناء الاتصال بجوجل شيت. يرجى التأكد من صحة الرابط.")
