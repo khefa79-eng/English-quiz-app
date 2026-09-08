@@ -251,6 +251,20 @@ def save_exam_to_sheet(exam_id, grade, exam_data, created_at):
     except Exception:
         return False
 
+# دالة الحذف الفوري من جوجل شيت والسحابة
+def delete_exam_from_sheet(exam_id, grade):
+    try:
+        payload = json.dumps({
+            "action": "delete_exam",
+            "exam_id": exam_id,
+            "grade": grade
+        }).encode('utf-8')
+        req = urllib.request.Request(EXAM_API_URL, data=payload, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return True
+    except Exception:
+        return False
+
 def load_submissions():
     try:
         req = urllib.request.Request(SUBMISSION_API_URL, headers={'User-Agent': 'Mozilla/5.0'})
@@ -432,12 +446,9 @@ def parse_text_locally(text):
         
     return questions
 
-# --- نظام الفلترة والحظر التام للأسئلة التجريبية والتالفة (Anti-Dummy Filter) ---
 def auto_clean_quiz_questions(questions):
     valid_questions = []
     removed_count = 0
-    
-    # كلمات محظورة تدل على أن السؤال تجريبي أو تالف
     dummy_keywords = ['word1', 'word2', 'word3', 'word4', 'الخيار a', 'الخيار b', 'الخيار c', 'الطرف الأول من السؤال']
     
     for q in questions:
@@ -445,7 +456,6 @@ def auto_clean_quiz_questions(questions):
         ans = str(q.get('answer', '')).lower()
         opts = [str(o).lower() for o in q.get('options', [])]
         
-        # تحقق من وجود كلمات وهمية تجريبية
         is_dummy = False
         for dk in dummy_keywords:
             if dk in q_text or dk in ans or any(dk in opt for opt in opts):
@@ -814,7 +824,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة ومحمية ضد الأسئلة الوهمية.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بالحذف السحابي وتأمين الأسئلة.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -1122,7 +1132,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد بيانات مسجلة في المنصة بعد.")
 
-        # TAB 4: BROWSE EXAM BANK
+        # TAB 4: BROWSE EXAM BANK (مع تفعيل الحذف السحابي المباشر)
         with tab_bank:
             st.markdown("### 🔍 اختاري الصف الدراسي المطلوب:")
             selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
@@ -1194,8 +1204,12 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         c1.success(f"✅ الاختبار رقم ({idx}) هو المتاح حالياً لجميع طلاب الجروب")
                         
                     if c2.button(f"🗑️ حذف الاختبار ({idx})", key=f"del_{e_id}"):
-                        del bank[selected_manage_grade][e_id]
-                        st.rerun()
+                        deleted_ok = delete_exam_from_sheet(e_id, selected_manage_grade)
+                        if deleted_ok:
+                            st.success(f"تم حذف الاختبار رقم ({idx}) نهائياً من السحابة وجوجل شيت!")
+                            st.rerun()
+                        else:
+                            st.error("فشل الحذف من السحابة. يرجى المحاولة مرة أخرى.")
                     st.write("")
             else:
                 st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
@@ -1282,10 +1296,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             quiz_unit = c_u.text_input("الوحدة (Unit):", "Unit 1", key="exam_unit_input")
             quiz_lesson = c_l.text_input("الدرس (Lesson):", "Lesson 1", key="exam_lesson_input")
             
-            quiz_title = c_t = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
+            quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
             raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا:", height=180, key="new_raw_text")
             
-            # --- مرحلة الفحص والحظر التام للأسئلة التجريبية (Anti-Dummy Auto-Clean) ---
             if st.button("🔍 فحص واستبعاد الأسئلة الوهمية تلقائياً (Anti-Dummy)", key="preview_btn"):
                 if raw_text.strip():
                     raw_parsed = parse_text_locally(raw_text)
