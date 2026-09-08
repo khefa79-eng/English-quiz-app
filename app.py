@@ -432,37 +432,45 @@ def parse_text_locally(text):
         
     return questions
 
-def validate_quiz_questions(questions):
-    errors = []
-    if not questions:
-        return ["لم يتم العثور على أي أسئلة صالحة للاستخراج. تأكد من تنسيق النص."]
+# --- نظام التنظيف والاستبعاد الذكي التلقائي (Auto-Clean Validation) ---
+def auto_clean_quiz_questions(questions):
+    valid_questions = []
+    removed_count = 0
     
-    for idx, q in enumerate(questions, 1):
+    for q in questions:
         q_type = q.get('type', 'mcq')
         ans = q.get('answer', '')
         
+        # تحقق من وجود إجابة
         if not ans or str(ans).strip() == "":
-            errors.append(f"السؤال رقم ({idx}) ليس له إجابة نموذجية (Answer) صحيحة ومحددة.")
+            removed_count += 1
+            continue
             
+        is_valid = True
         if q_type in ["mcq", "reading", "matching"]:
             opts = q.get('options', [])
             if not opts or len(opts) < 2:
-                errors.append(f"السؤال رقم ({idx}) يحتوي على أقل من خيارين صحيحين.")
+                is_valid = False
             elif q_type != "matching":
                 match_found = any(clean_text_for_grading(str(ans)) == clean_text_for_grading(str(opt)) for opt in opts)
                 if not match_found:
-                    errors.append(f"السؤال رقم ({idx}): الإجابة النموذجية ('{ans}') غير موجودة ضمن الخيارات المحددة!")
+                    is_valid = False
 
         elif q_type == "box_complete":
             box = q.get('box_words', [])
             if not box:
-                errors.append(f"السؤال رقم ({idx}) يتبع نظام صندوق الكلمات ولكنه فارغ.")
+                is_valid = False
             else:
                 match_found = any(clean_text_for_grading(str(ans)) == clean_text_for_grading(str(b)) for b in box)
                 if not match_found:
-                    errors.append(f"السؤال رقم ({idx}): الإجابة ('{ans}') غير موجودة في صندوق الكلمات المرفق!")
-                
-    return errors
+                    is_valid = False
+                    
+        if is_valid:
+            valid_questions.append(q)
+        else:
+            removed_count += 1
+            
+    return valid_questions, removed_count
 
 def render_speech_player(text_to_read):
     clean_js_text = text_to_read.replace("'", "\\'").replace('"', '\\"').replace("\n", " ")
@@ -611,7 +619,6 @@ if active_exam and active_exam.get("questions"):
     if 'current_verified_student' not in st.session_state:
         st.markdown("#### 👤 تسجيل دخول الطالب")
         
-        # التنبيه الصارم والواضح للاستخدام برقم هاتف واحد والاسم الرباعي
         st.markdown("""
         <div class="student-gate-box">
             ⚠️ <b>تعليمات هامة جداً قبل بدء الاختبار:</b><br>
@@ -797,7 +804,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مشفرة ومؤمنة بالكامل.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بنظام الاستبعاد الذكي للأخطاء والتنظيف التلقائي.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -808,9 +815,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             "➕ إضافة اختبار"
         ])
         
-        # TAB 1: CUSTOM ACADEMIC WEEKLY HONOR ROLL (اعتماد المعرف الأساسي برقم الهاتف والاسم الرباعي الدقيق)
+        # TAB 1: CUSTOM ACADEMIC WEEKLY HONOR ROLL
         with tab_weekly:
-            st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع (Weekly Honor Roll - تطابق رقم الهاتف والاسم الرباعي)")
+            st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع (Weekly Honor Roll)")
             subs = load_submissions()
             
             if subs:
@@ -825,7 +832,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     if len(phone_clean) > 10:
                         phone_clean = phone_clean[-10:]
                         
-                    # المعرف الفريد الدقيق جداً لمنع أي تداخل
                     unique_key = f"{phone_clean}_{clean_n}"
                     
                     records.append({
@@ -882,7 +888,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         )
                     
                     st.write("---")
-                    st.markdown(f"#### 📋 كشف المتفوقين بدقة لـ ({chosen_week}):")
+                    st.markdown(f"#### 📋 كشف المتفوقين لـ ({chosen_week}):")
                     
                     df_wk_display = df_selected_week.copy()
                     df_wk_display["النسبة المئوية"] = df_wk_display["النسبة"].apply(lambda x: f"{x}%")
@@ -1258,9 +1264,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد مستندها.")
 
-        # TAB 6: ADD NEW EXAM WITH SMART VALIDATION FEATURE
+        # TAB 6: ADD NEW EXAM WITH AUTO-CLEAN VALIDATION FEATURE
         with tab_new:
-            st.markdown("#### 📝 تجهيز ومعاينة وفحص ذكي واختبار جديد")
+            st.markdown("#### 📝 تجهيز ومعاينة وفحص واستبعاد تلقائي للأخطاء")
             c_g, c_u, c_l = st.columns([2, 1, 1])
             sel_grade = c_g.selectbox("الصف الدراسي المستهدف:", GRADES_LIST, key="new_exam_grade")
             quiz_unit = c_u.text_input("الوحدة (Unit):", "Unit 1", key="exam_unit_input")
@@ -1269,21 +1275,24 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
             raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا:", height=180, key="new_raw_text")
             
-            if st.button("🔍 فحص ومعاينة ذكية للأسئلة (Smart Validation)", key="preview_btn"):
+            # --- مرحلة الفحص والتنظيف التلقائي (Auto-Clean Validation) ---
+            if st.button("🔍 فحص واستبعاد الأسئلة التالفة تلقائياً (Auto-Clean)", key="preview_btn"):
                 if raw_text.strip():
-                    preview_parsed = parse_text_locally(raw_text)
-                    validation_errors = validate_quiz_questions(preview_parsed)
+                    raw_parsed = parse_text_locally(raw_text)
+                    cleaned_parsed, removed_count = auto_clean_quiz_questions(raw_parsed)
                     
-                    if validation_errors:
-                        st.error("⚠️ تنبيه هام: تم العثور على أخطاء في الأسئلة المستخرجة يجب تصحيحها أولاً:")
-                        for err in validation_errors:
-                            st.warning(f"❌ {err}")
-                        st.stop()
+                    # حفظ الأسئلة الصالحة في الـ session_state لاستخدامها عند الحفظ
+                    st.session_state['ready_to_save_questions'] = cleaned_parsed
+                    
+                    if removed_count > 0:
+                        st.warning(f"⚠️ تنبيه: تم العثور على أخطاء في ({removed_count}) سؤال وتم **حذفها واستبعادها تلقائياً** ليبقى الاختبار سليماً 100%!")
                     else:
-                        st.success(f"✅ مبروك! اجتازت الأسئلة الفحص الذكي بنجاح. إجمالي عدد الأسئلة الصحيحة: **{len(preview_parsed)} سؤال**")
+                        st.success("🎉 مبروك! جميع الأسئلة سليمة 100% واجتازت الفحص بنجاح تام.")
+                        
+                    if cleaned_parsed:
                         st.markdown("---")
-                        st.markdown("### 👀 معاينة شكل الأسئلة كما سيراها الطلاب:")
-                        for p_idx, p_q in enumerate(preview_parsed):
+                        st.markdown(f"### 👀 معاينة الأسئلة الصالحة للاختبار (إجمالي: {len(cleaned_parsed)} سؤال):")
+                        for p_idx, p_q in enumerate(cleaned_parsed):
                             st.markdown(f"**Q{p_idx + 1} [{p_q.get('type')}]:** {p_q.get('question', p_q.get('premise', ''))}")
                             if p_q.get('options'):
                                 st.write(f"الخيارات: {p_q.get('options')}")
@@ -1291,45 +1300,46 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                                 st.write(f"صندوق الكلمات: {p_q.get('box_words')}")
                             st.markdown(f"🟢 **الإجابة النموذجية المسجلة:** `{p_q.get('answer')}`")
                             st.write("---")
-                        st.info("الأسئلة سليمة 100% ومطابقة للقواعد. يمكنك الحفظ أو النشر بكل اطمئنان!")
+                        st.info("الأسئلة جاهزة تماماً وآمنة للنشر أو الحفظ!")
+                    else:
+                        st.error("⚠️ عذراً، لم تبق أي أسئلة صالحة بعد التنظيف. يرجى مراجعة النص المنسوخ.")
                 else:
                     st.warning("يرجى لصق نص الأسئلة أولاً لفحصها ومعاينتها.")
-    
+            
             col_save_draft, col_save_pub = st.columns([1, 1])
             save_as_draft = col_save_draft.button("📁 حفظ في الأرشيف فقط (بدون تفعيل حالياً)")
             save_and_pub = col_save_pub.button("🚀 حفظ وتفعيل للطلاب فوراً")
             
             if save_as_draft or save_and_pub:
                 if raw_text.strip():
-                    parsed = parse_text_locally(raw_text)
-                    final_check_errors = validate_quiz_questions(parsed)
-                    if final_check_errors:
-                        st.error("⚠️ لا يمكن الحفظ لوجود أخطاء في الأسئلة. يرجى الضغط على زر الفحص الذكي لمعرفة الأخطاء وتصحيحها.")
-                    else:
-                        if parsed and len(parsed) > 0:
-                            exam_id = f"exam_{int(datetime.now().timestamp())}"
-                            exam_payload = {
-                                "title": quiz_title.strip(),
-                                "unit": quiz_unit.strip(),
-                                "lesson": quiz_lesson.strip(),
-                                "grade": sel_grade,
-                                "questions": parsed,
-                                "created_at": get_current_egypt_time()
-                            }
-                            
-                            saved_ok = save_exam_to_sheet(exam_id, sel_grade, exam_payload, get_current_egypt_time())
-                            
-                            if saved_ok:
-                                if save_and_pub:
-                                    set_active_exam_for_grade(sel_grade, exam_id)
-                                    st.success(f"🎉 تم فحص وحفظ وتفعيل '{quiz_title}' لصف {sel_grade} بنجاح تام على جوجل شيت!")
-                                else:
-                                    st.success(f"📁 تم فحص وحفظ '{quiz_title}' في أرشيف صف {sel_grade} بنجاح على جوجل شيت!")
-                                st.rerun()
+                    # استخدام الأسئلة الصالحة التي تم تنظيفها مسبقاً أو تنظيفها الآن فوراً
+                    raw_parsed = parse_text_locally(raw_text)
+                    parsed, _ = auto_clean_quiz_questions(raw_parsed)
+                    
+                    if parsed and len(parsed) > 0:
+                        exam_id = f"exam_{int(datetime.now().timestamp())}"
+                        exam_payload = {
+                            "title": quiz_title.strip(),
+                            "unit": quiz_unit.strip(),
+                            "lesson": quiz_lesson.strip(),
+                            "grade": sel_grade,
+                            "questions": parsed,
+                            "created_at": get_current_egypt_time()
+                        }
+                        
+                        saved_ok = save_exam_to_sheet(exam_id, sel_grade, exam_payload, get_current_egypt_time())
+                        
+                        if saved_ok:
+                            if save_and_pub:
+                                set_active_exam_for_grade(sel_grade, exam_id)
+                                st.success(f"🎉 تم تنظيف وحفظ وتفعيل '{quiz_title}' لصف {sel_grade} بنجاح تام على جوجل شيت بدون أي أخطاء!")
                             else:
-                                st.error("⚠️ حدث خطأ أثناء الاتصال بجوجل شيت. يرجى التأكد من صحة الرابط.")
+                                st.success(f"📁 تم تنظيف وحفظ '{quiz_title}' في أرشيف صف {sel_grade} بنجاح على جوجل شيت!")
+                            st.rerun()
                         else:
-                            st.error("يرجى التأكد من كتابة الأسئلة بالتنسيق المطلوب.")
+                            st.error("⚠️ حدث خطأ أثناء الاتصال بجوجل شيت. يرجى التأكد من صحة الرابط.")
+                    else:
+                        st.error("لا توجد أسئلة صالحة بعد الفحص والتنظيف للحفظ.")
                 else:
                     st.error("يرجى لصق نص الأسئلة أولاً.")
     elif admin_pass:
