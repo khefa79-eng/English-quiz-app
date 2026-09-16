@@ -402,7 +402,7 @@ def parse_text_locally(text):
             while i < len(lines):
                 sub_line = lines[i]
                 if re.search(r'(?i)^answer\s*:', sub_line):
-                    answer = re.sub(r'(?i)^answer\s*:\s*', '', sub_line).strip()
+                    answer = re.sub(r'(?i)^answer\s*:', '', sub_line).strip()
                     i += 1
                     break
                 elif re.search(r'(?i)^options\s*:', sub_line):
@@ -511,10 +511,11 @@ def render_speech_player(text_to_read):
     """
     st.components.v1.html(audio_html, height=60)
 
+# --- دالة كارت الشرف والتقرير الشامل (تعرض جميع الطلاب مرتبين مع درجاتهم ونسبهم وزر التحميل) ---
 def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor-certificate-card"):
     rows_html = ""
-    medals = ["🥇", "🥈", "🥉", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐"]
-    colors = ["#F59E0B", "#64748B", "#B45309", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5"]
+    medals = ["🥇", "🥈", "🥉", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐"]
+    colors = ["#F59E0B", "#64748B", "#B45309", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5"]
     
     for i, w in enumerate(winners_list):
         medal = medals[i] if i < len(medals) else "⭐"
@@ -525,8 +526,8 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
         rows_html += f"""
         <div style="display:flex; justify-content:space-between; align-items:center; background:#FFFFFF; padding:10px 16px; border-radius:10px; margin-bottom:8px; box-shadow:0 2px 4px rgba(0,0,0,0.04); border-right: 5px solid {color};">
             <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:1.4rem;">{medal}</span>
-                <span style="font-size:1.1rem; font-weight:800; color:#1E293B;">{w['name']}</span>
+                <span style="font-size:1.3rem;">{medal}</span>
+                <span style="font-size:1.05rem; font-weight:800; color:#1E293B;">{w['name']}</span>
                 {grade_badge}
             </div>
             <div style="background:{color}; color:white; padding:4px 12px; border-radius:15px; font-weight:bold; font-size:0.95rem;">
@@ -536,24 +537,40 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
         """
         
     widget_html = f"""
-    <div id="{card_id}" style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 50%, #3B82F6 100%); padding: 25px; border-radius: 16px; color: white; font-family: sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 3px solid #FCD34D; max-width: 680px; margin: 0 auto;">
-        <div style="text-align: center; border-bottom: 2px dashed rgba(255,255,255,0.3); padding-bottom: 15px; margin-bottom: 18px;">
-            <div style="font-size: 1.8rem; margin-bottom: 4px;">🏆 <b>HONOR ROLL & TOP ACHIEVERS</b> 🏆</div>
-            <div style="font-size: 1.25rem; font-weight: 700; color: #FEF08A;">لوحة شرف المتفوقين — Mrs. Kheffa Eletreby</div>
-            <div style="font-size: 1rem; color: #DBEAFE; margin-top: 5px;">📚 <b>{grade_name}</b> | 📝 {exam_name}</div>
+    <div>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+        <div id="{card_id}" style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 50%, #3B82F6 100%); padding: 25px; border-radius: 16px; color: white; font-family: sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 3px solid #FCD34D; max-width: 680px; margin: 0 auto;">
+            <div style="text-align: center; border-bottom: 2px dashed rgba(255,255,255,0.3); padding-bottom: 15px; margin-bottom: 18px;">
+                <div style="font-size: 1.7rem; margin-bottom: 4px;">🏆 <b>STUDENTS PERFORMANCE & HONOR ROLL</b> 🏆</div>
+                <div style="font-size: 1.2rem; font-weight: 700; color: #FEF08A;">تقرير درجات الطلاب — Mrs. Kheffa Eletreby</div>
+                <div style="font-size: 0.95rem; color: #DBEAFE; margin-top: 5px;">📚 <b>{grade_name}</b> | 📝 {exam_name}</div>
+            </div>
+            <div>
+                {rows_html}
+            </div>
+            <div style="text-align: center; margin-top: 18px; font-size: 0.95rem; color: #FEF08A; font-weight: 700; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 10px;">
+                🌟 ألف مبروك لأبطالنا المتميزين مع أطيب أمنياتي بدوام التفوق والنجاح! 🌟
+            </div>
         </div>
-        <div>
-            {rows_html}
+        <div style="text-align: center; margin-top: 15px;">
+            <button onclick="downloadCardImage()" style="background-color: #22C55E; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 3px 6px rgba(0,0,0,0.15);">
+                📥 تحميل تقرير الكارت كصورة (Download Report Image)
+            </button>
         </div>
-        <div style="text-align: center; margin-top: 18px; font-size: 0.95rem; color: #FEF08A; font-weight: 700; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 10px;">
-            🌟 ألف مبروك لأبطالنا المتميزين مع أطيب أمنياتي بدوام التفوق والنجاح! 🌟
-        </div>
-    </div>
-    <div style="text-align: center; margin-top: 12px; color: #334155; font-size: 0.9rem; font-weight: bold;">
-        💡 (للحفظ على الموبايل أو الكمبيوتر: قُم بأخذ لقطة شاشة Screenshot لهذا الكارت مباشرة)
+        <script>
+        function downloadCardImage() {{
+            const cardElement = document.getElementById("{card_id}");
+            html2canvas(cardElement, {{ scale: 2, useCORS: true }}).then(canvas => {{
+                const link = document.createElement('a');
+                link.download = 'Students_Report_{grade_name.replace(" ", "_")}.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            }});
+        }}
+        </script>
     </div>
     """
-    st.components.v1.html(widget_html, height=len(winners_list) * 65 + 280)
+    st.components.v1.html(widget_html, height=len(winners_list) * 65 + 340)
 
 # --- EXAM LOCATOR ---
 exam_bank = load_exam_bank()
@@ -823,7 +840,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بفحص دقيق ورسائل حصرية.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بتقارير شاملة لجميع الطلاب كصور قابلة للتحميل.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -885,11 +902,8 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 df_selected_week = df_selected_week.sort_values(by=["النسبة", "الدرجة"], ascending=[False, False])
                 
                 if not df_selected_week.empty:
-                    top_score_wk = df_selected_week["النسبة"].max()
-                    top_wk_df = df_selected_week[df_selected_week["النسبة"] >= min(85.0, top_score_wk)].head(10)
-                    
                     wk_winners = []
-                    for _, r in top_wk_df.iterrows():
+                    for _, r in df_selected_week.iterrows():
                         wk_winners.append({
                             "name": r["اسم الطالب"],
                             "grade": r["الصف الدراسي"],
@@ -900,7 +914,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     if wk_winners:
                         short_wk_title = chosen_week.split('(')[0].strip()
                         render_honor_card_widget(
-                            f"🏆 أوائل {short_wk_title} - {filter_wk_grade}",
+                            f"أوائل {short_wk_title} - {filter_wk_grade}",
                             chosen_week,
                             wk_winners,
                             card_id="weekly-honor-card"
@@ -976,15 +990,13 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         
                         if chosen_exam_filter != "-- اختر الاختبار المطلوب --":
                             df_final_filtered = df_grade_filtered[df_grade_filtered["عنوان الاختبار"] == chosen_exam_filter]
-                            df_final_filtered = df_final_filtered.sort_values(by=["النسبة", "الدرجة"], ascending=[False, False])
+                            df_final_filtered = df_final_filtered.sort_values(by=["النسبة", "الدرجة", "وقت التسليم"], ascending=[False, False, True])
                             df_final_filtered = df_final_filtered.drop_duplicates(subset=["unique_id"], keep="first")
                             
                             st.success(f"📌 يتم عرض تقرير اختبار: **{chosen_exam_filter}** لصف **{filter_grade}** (إجمالي الطلاب: {len(df_final_filtered)})")
                             
-                            top_threshold = df_final_filtered["النسبة"].max()
-                            top_students_df = df_final_filtered[df_final_filtered["النسبة"] >= min(85.0, top_threshold)].head(5)
                             winners = []
-                            for _, r in top_students_df.iterrows():
+                            for _, r in df_final_filtered.iterrows():
                                 winners.append({
                                     "name": r["اسم الطالب"],
                                     "grade": r["الصف الدراسي"],
@@ -1024,9 +1036,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
 
-        # TAB 3: DEDICATED GRADE REPORT WITH STAR OF THE DAY FEATURE
+        # TAB 3: DEDICATED GRADE REPORT
         with tab_grades_report:
-            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع تحديد Star of the Day)")
+            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع ترتيب جميع الطلاب)")
             subs_g = load_submissions()
             
             if subs_g:
@@ -1061,27 +1073,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     g_records_clean = df_g_raw.to_dict('records')
                     
                     st.success(f"إجمالي عدد الطلاب الفريدين في {selected_report_grade}: **{len(g_records_clean)} طالب**")
-                    
-                    sorted_by_time = sorted(g_records_clean, key=lambda x: x['timestamp'])
-                    star_candidate = None
-                    for student in sorted_by_time:
-                        if student['percentage'] == 100.0:
-                            star_candidate = student
-                            break
-                    
-                    if star_candidate:
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #F59E0B, #D97706); padding: 18px; border-radius: 12px; color: white; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(245,158,11,0.3);">
-                            <div style="font-size: 1.5rem; font-weight: 800;">⭐ STAR OF THE DAY ⭐</div>
-                            <div style="font-size: 1.2rem; font-weight: 700; margin-top: 5px;">أول بطل أتم الاختبار بالدرجة النهائية: <b>{star_candidate['name']}</b></div>
-                            <div style="font-size: 0.95rem; margin-top: 4px; color: #FEF3C7;">📝 الاختبار: {star_candidate['exam']} | 🕒 وقت التسليم: {clean_time_display(star_candidate['timestamp'])}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.info("💡 لم يحصل أي طالب على الدرجة النهائية (100%) حتى الآن لتحديد Star of the Day.")
 
                     report_winners = []
-                    for r in sorted(g_records_clean, key=lambda x: (x['percentage'], x['score'], x['timestamp'], x['timestamp']), reverse=True):
+                    for r in sorted(g_records_clean, key=lambda x: (x['percentage'], x['score'], x['timestamp']), reverse=True):
                         report_winners.append({
                             "name": r["name"],
                             "grade": selected_report_grade,
@@ -1279,7 +1273,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد مستندها.")
 
-        # TAB 6: ADD NEW EXAM WITH EXCLUSIVE IF/ELSE VALIDATION (منع تداخل الرسائل)
+        # TAB 6: ADD NEW EXAM
         with tab_new:
             st.markdown("#### 📝 تجهيز ومعاينة وفحص واستبعاد تلقائي للأسئلة الوهمية")
             c_g, c_u, c_l = st.columns([2, 1, 1])
@@ -1306,7 +1300,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
 
             raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا (أو سيظهر نص الملف المرفوع تلقائياً):", value=file_text_content, height=180, key="new_raw_text")
             
-            # --- فحص منطقي حاسم (إما نجاح أو خطأ بشكل متبادل تماماً) ---
             if st.button("🔍 فحص واستبعاد الأسئلة الوهمية تلقائياً (Anti-Dummy)", key="preview_btn"):
                 if raw_text.strip():
                     raw_parsed = parse_text_locally(raw_text)
