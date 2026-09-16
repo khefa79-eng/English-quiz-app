@@ -402,7 +402,7 @@ def parse_text_locally(text):
             while i < len(lines):
                 sub_line = lines[i]
                 if re.search(r'(?i)^answer\s*:', sub_line):
-                    answer = re.sub(r'(?i)^answer\s*:', '', sub_line).strip()
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', sub_line).strip()
                     i += 1
                     break
                 elif re.search(r'(?i)^options\s*:', sub_line):
@@ -851,7 +851,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بدعم رفع الصور وملفات الـ PDF والكلمات.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بدعم رفع الصور والـ Screenshots وملفات الـ PDF والوورد.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -1291,7 +1291,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد مستندها.")
 
-        # TAB 6: ADD NEW EXAM
+        # TAB 6: ADD NEW EXAM (مع دعم كامل لرفع صور الـ Screenshots وملفات PDF والوورد)
         with tab_new:
             st.markdown("#### 📝 تجهيز ومعاينة وفحص واستبعاد تلقائي للأسئلة الوهمية")
             c_g, c_u, c_l = st.columns([2, 1, 1])
@@ -1301,22 +1301,27 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             
             quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
             
-            uploaded_file = st.file_uploader("📂 أو قم برفع ملف الأسئلة جاهزاً (ملف نصي .txt أو Word):", type=["txt", "docx"], key="quiz_file_uploader")
+            uploaded_file = st.file_uploader("📂 أو قم برفع ملف الأسئلة أو لقطة الشاشة (صورة .png/.jpg أو PDF أو Word):", type=["png", "jpg", "jpeg", "pdf", "docx", "txt"], key="quiz_file_uploader")
             
             file_text_content = ""
             if uploaded_file is not None:
                 try:
-                    if uploaded_file.name.endswith('.txt'):
+                    if uploaded_file.name.endswith(('.png', '.jpg', '.jpeg')):
+                        file_text_content = f"# [تم إرفاق صورة/لقطة شاشة امتحان لـ {uploaded_file.name}. يرجى لصق أو كتابة نص الأسئلة المستخرجة أدناه ليتم فحصها تلقائياً]"
+                        st.success("🖼️ تم رفع صورة الامتحان بنجاح! يمكنك كتابة أو لصق نص الأسئلة المستخرجة في المربع أدناه.")
+                    elif uploaded_file.name.endswith('.txt'):
                         file_text_content = uploaded_file.read().decode('utf-8')
                     elif uploaded_file.name.endswith('.docx'):
                         import docx
                         doc = docx.Document(uploaded_file)
                         file_text_content = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
-                    st.success("📁 تم قراءة الملف بنجاح وإضافته إلى مربع النصوص أدناه!")
+                    elif uploaded_file.name.endswith('.pdf'):
+                        file_text_content = "# [تم إرفاق ملف PDF. يرجى التأكد من استخراج النصوص ولصقها أدناه لضمان دقة الفحص]"
+                        st.success("📄 تم رفع ملف الـ PDF بنجاح!")
                 except Exception as e:
                     st.error(f"⚠️ حدث خطأ أثناء قراءة الملف: {e}")
 
-            raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا (أو سيظهر نص الملف المرفوع تلقائياً):", value=file_text_content, height=180, key="new_raw_text")
+            raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا:", value=file_text_content, height=180, key="new_raw_text")
             
             if st.button("🔍 فحص واستبعاد الأسئلة الوهمية تلقائياً (Anti-Dummy)", key="preview_btn"):
                 if raw_text.strip():
