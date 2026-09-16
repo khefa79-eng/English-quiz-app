@@ -511,13 +511,26 @@ def render_speech_player(text_to_read):
     """
     st.components.v1.html(audio_html, height=60)
 
-# --- دالة كارت الشرف والتقرير الشامل (تعرض جميع الطلاب مرتبين مع درجاتهم ونسبهم وزر التحميل كصورة) ---
+# --- دالة كارت الشرف والتقرير الشامل (دمج الطالب برقم الهاتف لعدم التكرار نهائياً) ---
 def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor-certificate-card"):
+    # تصفية دقيقة تضمن عدم تكرار نفس الطالب حتى لو اختلفت صيغة الاسم، بالاعتماد على رقم الهاتف أو المعرف الأساسي
+    unique_students_map = {}
+    for w in winners_list:
+        phone_key = w.get('phone', '')
+        score_val = w.get('score', 0)
+        # إذا لم يكن الهاتف موجوداً، نعتمد على اسم الطالب
+        key = phone_key if phone_key else clean_text_for_grading(w['name'])
+        
+        if key not in unique_students_map or score_val > unique_students_map[key]['score']:
+            unique_students_map[key] = w
+
+    deduplicated_winners = sorted(list(unique_students_map.values()), key=lambda x: (x['score'], x.get('timestamp', '')), reverse=True)
+
     rows_html = ""
     medals = ["🥇", "🥈", "🥉", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐"]
     colors = ["#F59E0B", "#64748B", "#B45309", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5", "#4F46E5"]
     
-    for i, w in enumerate(winners_list):
+    for i, w in enumerate(deduplicated_winners):
         medal = medals[i] if i < len(medals) else "⭐"
         color = colors[i] if i < len(colors) else "#4F46E5"
         clean_g_tag = w.get('grade', '').split('(')[0].strip()
@@ -570,7 +583,7 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
         </script>
     </div>
     """
-    st.components.v1.html(widget_html, height=len(winners_list) * 65 + 340)
+    st.components.v1.html(widget_html, height=len(deduplicated_winners) * 65 + 340)
 
 # --- EXAM LOCATOR ---
 exam_bank = load_exam_bank()
@@ -699,7 +712,7 @@ if active_exam and active_exam.get("questions"):
                     
                     st.markdown(f"""
                         <div style="text-align: center; margin-top: 15px;">
-                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
+                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 28px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
                                 📲 Send Score to Mrs. Kheffa on WhatsApp
                             </a>
                         </div>
@@ -840,7 +853,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بسجل شامل لكل الامتحانات السابقة.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بالدمج الذكي ومنع التكرار نهائياً.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -868,7 +881,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     if len(phone_clean) > 10:
                         phone_clean = phone_clean[-10:]
                         
-                    unique_key = f"{phone_clean}_{clean_n}"
+                    unique_key = phone_clean if len(phone_clean) >= 9 else clean_n
                     
                     records.append({
                         "unique_id": unique_key,
@@ -908,7 +921,8 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             "name": r["اسم الطالب"],
                             "grade": r["الصف الدراسي"],
                             "score": r["النسبة"],
-                            "marks": f"{r['الدرجة']}/{r['المجموع']}"
+                            "marks": f"{r['الدرجة']}/{r['المجموع']}",
+                            "phone": r["رقم الهاتف"]
                         })
                     
                     if wk_winners:
@@ -955,7 +969,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
                     if len(phone_clean) > 10:
                         phone_clean = phone_clean[-10:]
-                    unique_key = f"{phone_clean}_{clean_n}"
+                    unique_key = phone_clean if len(phone_clean) >= 9 else clean_n
                     
                     records.append({
                         "unique_id": unique_key,
@@ -1003,7 +1017,8 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                                     "name": r["اسم الطالب"],
                                     "grade": r["الصف الدراسي"],
                                     "score": r["النسبة"],
-                                    "marks": f"{r['الدرجة']}/{r['المجموع']}"
+                                    "marks": f"{r['الدرجة']}/{r['المجموع']}",
+                                    "phone": r["رقم الهاتف"]
                                 })
                             if winners:
                                 render_honor_card_widget(
@@ -1036,11 +1051,11 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     c_sel_ex.info("يرجى اختيار الصف أولاً")
                     st.info("👆 يرجى اختيار الصف الدراسي لتظهر لك قائمة اختباراته السابقة والحالية.")
             else:
-                st.info("لا توجد أي نتائج مسجلة في المنصة بعد. تأكد من أن رابط جوجل شيت للتسليمات يعمل بشكل صحيح.")
+                st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
 
         # TAB 3: DEDICATED GRADE REPORT
         with tab_grades_report:
-            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع ترتيب جميع الطلاب)")
+            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع منع تكرار الطلاب بالكامل)")
             subs_g = load_submissions()
             
             if subs_g:
@@ -1056,7 +1071,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
                             if len(phone_clean) > 10:
                                 phone_clean = phone_clean[-10:]
-                            unique_key = f"{phone_clean}_{clean_n}"
+                            unique_key = phone_clean if len(phone_clean) >= 9 else clean_n
                             
                             g_records.append({
                                 "unique_id": unique_key,
@@ -1084,7 +1099,8 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                                 "name": r["name"],
                                 "grade": selected_report_grade,
                                 "score": r["percentage"],
-                                "marks": f"{r['score']}/{r['total']}"
+                                "marks": f"{r['score']}/{r['total']}",
+                                "phone": r["phone"]
                             })
                         
                         render_honor_card_widget(
