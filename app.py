@@ -7,6 +7,15 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta, date
 import pandas as pd
+import pypdf
+
+# محاولة استيراد مكتبات الـ OCR وقراءة الصور لاستخراج النصوص بدقة عالية
+try:
+    import pytesseract
+    from PIL import Image
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
 
 # تعيين وضع العرض ليكون عريضاً بالكامل (Wide Layout) ومتوافقاً مع كل الأجهزة
 st.set_page_config(
@@ -851,7 +860,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بدعم رفع الصور والـ Screenshots وملفات الـ PDF والوورد.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بتقنية التعرف الضوئي OCR لاستخراج النصوص من ملفات الـ PDF والصور.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -1291,7 +1300,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد مستندها.")
 
-        # TAB 6: ADD NEW EXAM (مع دعم كامل لرفع صور الـ Screenshots وملفات PDF والوورد)
+        # TAB 6: ADD NEW EXAM (مع دعم كامل لصور الـ OCR وملفات الـ PDF والوورد)
         with tab_new:
             st.markdown("#### 📝 تجهيز ومعاينة وفحص واستبعاد تلقائي للأسئلة الوهمية")
             c_g, c_u, c_l = st.columns([2, 1, 1])
@@ -1301,27 +1310,43 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             
             quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
             
-            uploaded_file = st.file_uploader("📂 أو قم برفع ملف الأسئلة أو لقطة الشاشة (صورة .png/.jpg أو PDF أو Word):", type=["png", "jpg", "jpeg", "pdf", "docx", "txt"], key="quiz_file_uploader")
+            uploaded_file = st.file_uploader("📂 ارفعي ملف الأسئلة أو صورة الـ OCR / Screenshot:", type=["pdf", "docx", "txt", "png", "jpg", "jpeg"], key="quiz_file_uploader")
             
             file_text_content = ""
             if uploaded_file is not None:
                 try:
-                    if uploaded_file.name.endswith(('.png', '.jpg', '.jpeg')):
-                        file_text_content = f"# [تم إرفاق صورة/لقطة شاشة امتحان لـ {uploaded_file.name}. يرجى لصق أو كتابة نص الأسئلة المستخرجة أدناه ليتم فحصها تلقائياً]"
-                        st.success("🖼️ تم رفع صورة الامتحان بنجاح! يمكنك كتابة أو لصق نص الأسئلة المستخرجة في المربع أدناه.")
-                    elif uploaded_file.name.endswith('.txt'):
+                    if uploaded_file.name.endswith('.txt'):
                         file_text_content = uploaded_file.read().decode('utf-8')
+                        st.success("📁 تم قراءة ملف النصوص بنجاح!")
                     elif uploaded_file.name.endswith('.docx'):
                         import docx
                         doc = docx.Document(uploaded_file)
                         file_text_content = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
+                        st.success("📁 تم قراءة ملف الـ Word بنجاح!")
                     elif uploaded_file.name.endswith('.pdf'):
-                        file_text_content = "# [تم إرفاق ملف PDF. يرجى التأكد من استخراج النصوص ولصقها أدناه لضمان دقة الفحص]"
-                        st.success("📄 تم رفع ملف الـ PDF بنجاح!")
+                        reader = pypdf.PdfReader(uploaded_file)
+                        extracted_pages = []
+                        for page in reader.pages:
+                            txt = page.extract_text()
+                            if txt:
+                                extracted_pages.append(txt)
+                        file_text_content = "\n".join(extracted_pages)
+                        if file_text_content.strip():
+                            st.success("📄 تم استخراج نصوص الـ PDF تلقائياً بنجاح!")
+                        else:
+                            st.warning("⚠️ ملف الـ PDF المرفوع ممسوح ضوئياً (Scanned). يرجى لصق نصوصه في المربع أدناه.")
+                    elif uploaded_file.name.endswith(('.png', '.jpg', '.jpeg')):
+                        if OCR_AVAILABLE:
+                            img = Image.open(uploaded_file)
+                            ocr_text = pytesseract.image_to_string(img)
+                            file_text_content = ocr_text
+                            st.success("🖼️ تم تحليل الصورة وقراءة النصوص عبر تقنية OCR بنجاح!")
+                        else:
+                            st.warning("⚠️ مكتبة الـ OCR غير مفعلة بيئياً. يرجى لصق النصوص يدوياً أدناه.")
                 except Exception as e:
                     st.error(f"⚠️ حدث خطأ أثناء قراءة الملف: {e}")
 
-            raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا:", value=file_text_content, height=180, key="new_raw_text")
+            raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا (أو سيظهر محتوى الملف المرفوع تلقائياً):", value=file_text_content, height=180, key="new_raw_text")
             
             if st.button("🔍 فحص واستبعاد الأسئلة الوهمية تلقائياً (Anti-Dummy)", key="preview_btn"):
                 if raw_text.strip():
