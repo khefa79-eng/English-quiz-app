@@ -402,7 +402,7 @@ def parse_text_locally(text):
             while i < len(lines):
                 sub_line = lines[i]
                 if re.search(r'(?i)^answer\s*:', sub_line):
-                    answer = re.sub(r'(?i)^answer\s*:\s*', '', sub_line).strip()
+                    answer = re.sub(r'(?i)^answer\s*:', '', sub_line).strip()
                     i += 1
                     break
                 elif re.search(r'(?i)^options\s*:', sub_line):
@@ -513,12 +513,10 @@ def render_speech_player(text_to_read):
 
 # --- دالة كارت الشرف والتقرير الشامل (دمج الطالب برقم الهاتف لعدم التكرار نهائياً) ---
 def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor-certificate-card"):
-    # تصفية دقيقة تضمن عدم تكرار نفس الطالب حتى لو اختلفت صيغة الاسم، بالاعتماد على رقم الهاتف أو المعرف الأساسي
     unique_students_map = {}
     for w in winners_list:
         phone_key = w.get('phone', '')
         score_val = w.get('score', 0)
-        # إذا لم يكن الهاتف موجوداً، نعتمد على اسم الطالب
         key = phone_key if phone_key else clean_text_for_grading(w['name'])
         
         if key not in unique_students_map or score_val > unique_students_map[key]['score']:
@@ -853,7 +851,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بالدمج الذكي ومنع التكرار نهائياً.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بدعم رفع الصور وملفات الـ PDF والكلمات.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -1051,7 +1049,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     c_sel_ex.info("يرجى اختيار الصف أولاً")
                     st.info("👆 يرجى اختيار الصف الدراسي لتظهر لك قائمة اختباراته السابقة والحالية.")
             else:
-                st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
+                st.info("لا توجد أي نتائج مسجلة في المنصة بعد. تأكد من أن رابط جوجل شيت للتسليمات يعمل بشكل صحيح.")
 
         # TAB 3: DEDICATED GRADE REPORT
         with tab_grades_report:
