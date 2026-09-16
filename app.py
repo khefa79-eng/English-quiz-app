@@ -402,7 +402,7 @@ def parse_text_locally(text):
             while i < len(lines):
                 sub_line = lines[i]
                 if re.search(r'(?i)^answer\s*:', sub_line):
-                    answer = re.sub(r'(?i)^answer\s*:', '', sub_line).strip()
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', sub_line).strip()
                     i += 1
                     break
                 elif re.search(r'(?i)^options\s*:', sub_line):
@@ -511,7 +511,7 @@ def render_speech_player(text_to_read):
     """
     st.components.v1.html(audio_html, height=60)
 
-# --- دالة كارت الشرف والتقرير الشامل (تعرض جميع الطلاب مرتبين مع درجاتهم ونسبهم وزر التحميل) ---
+# --- دالة كارت الشرف والتقرير الشامل (تعرض جميع الطلاب مرتبين مع درجاتهم ونسبهم وزر التحميل كصورة) ---
 def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor-certificate-card"):
     rows_html = ""
     medals = ["🥇", "🥈", "🥉", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐", "⭐"]
@@ -699,7 +699,7 @@ if active_exam and active_exam.get("questions"):
                     
                     st.markdown(f"""
                         <div style="text-align: center; margin-top: 15px;">
-                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 28px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
+                            <a href="{whatsapp_url}" target="_blank" style="background-color: #25D366; color: white; padding: 14px 24px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; display: inline-block;">
                                 📲 Send Score to Mrs. Kheffa on WhatsApp
                             </a>
                         </div>
@@ -840,7 +840,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بتقارير شاملة لجميع الطلاب كصور قابلة للتحميل.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بسجل شامل لكل الامتحانات السابقة.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -944,17 +944,10 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
 
         # TAB 2: GENERAL REPORTS - DEDICATED PER-EXAM REPORT
         with tab_reports:
-            st.markdown("### 📊 تقرير درجات الطلاب (مخصص لكل امتحان ولكل صف على حدة)")
+            st.markdown("### 📊 تقرير درجات الطلاب (جميع الامتحانات السابقة والحالية لكل صف واختبار)")
             subs = load_submissions()
             
             if subs:
-                c_sel_gr, c_sel_ex = st.columns([1.5, 2])
-                filter_grade = c_sel_gr.selectbox(
-                    "1️⃣ اختر الصف الدراسي المطلوب:",
-                    ["-- اختر الصف أولاً --"] + GRADES_LIST,
-                    key="report_grade_filter"
-                )
-                
                 records = []
                 for _, s_data in subs.items():
                     raw_name = str(s_data.get('full_name', '')).strip()
@@ -977,13 +970,22 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     })
                 df_all = pd.DataFrame(records)
                 
-                if filter_grade != "-- اختر الصف أولاً --":
+                available_grades_in_subs = list(df_all["الصف الدراسي"].unique())
+                
+                c_sel_gr, c_sel_ex = st.columns([1.5, 2])
+                filter_grade = c_sel_gr.selectbox(
+                    "1️⃣ اختر الصف الدراسي المطلوب:",
+                    ["-- اختر الصف --"] + available_grades_in_subs,
+                    key="report_grade_filter"
+                )
+                
+                if filter_grade != "-- اختر الصف --":
                     df_grade_filtered = df_all[df_all["الصف الدراسي"] == filter_grade]
                     
                     if not df_grade_filtered.empty:
                         available_exams = list(df_grade_filtered["عنوان الاختبار"].unique())
                         chosen_exam_filter = c_sel_ex.selectbox(
-                            "2️⃣ اختر الاختبار أو الامتحان المطلوب:",
+                            "2️⃣ اختر الاختبار (السابق أو الحالي):",
                             ["-- اختر الاختبار المطلوب --"] + available_exams,
                             key="report_exam_filter"
                         )
@@ -993,7 +995,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             df_final_filtered = df_final_filtered.sort_values(by=["النسبة", "الدرجة", "وقت التسليم"], ascending=[False, False, True])
                             df_final_filtered = df_final_filtered.drop_duplicates(subset=["unique_id"], keep="first")
                             
-                            st.success(f"📌 يتم عرض تقرير اختبار: **{chosen_exam_filter}** لصف **{filter_grade}** (إجمالي الطلاب: {len(df_final_filtered)})")
+                            st.success(f"📌 تقرير اختبار: **{chosen_exam_filter}** لصف **{filter_grade}** (إجمالي الطلاب: {len(df_final_filtered)})")
                             
                             winners = []
                             for _, r in df_final_filtered.iterrows():
@@ -1012,7 +1014,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                                 )
                             
                             st.write("---")
-                            st.markdown("#### 📋 جدول تفريغ درجات هذا الاختبار المخصص:")
+                            st.markdown("#### 📋 جدول تفريغ درجات هذا الاختبار:")
                             df_display = df_final_filtered.copy()
                             df_display["النسبة المئوية"] = df_display["النسبة"].apply(lambda x: f"{x}%")
                             df_display = df_display.drop(columns=["النسبة", "unique_id"])
@@ -1021,20 +1023,20 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             clean_gr_filename = filter_grade.split(' ')[0]
                             csv_data = df_final_filtered.drop(columns=["unique_id"]).to_csv(index=False).encode('utf-8-sig')
                             st.download_button(
-                                label=f"📥 تحميل تقرير درجات هذا الاختبار فقط بصيغة Excel / CSV",
+                                label=f"📥 تحميل تقرير درجات هذا الاختبار بصيغة Excel / CSV",
                                 data=csv_data,
                                 file_name=f"Report_{clean_gr_filename}_Exam_{datetime.now().strftime('%Y%m%d')}.csv",
                                 mime="text/csv"
                             )
                         else:
-                            st.info("👆 يرجى اختيار الاختبار المطلوب من القائمة المجاورة لعرض تقريره الخاص.")
+                            st.info("👆 يرجى اختيار الاختبار المطلوب من القائمة المجاورة لعرض تقريره.")
                     else:
-                        st.info(f"لا توجد أي نتائج مسجلة لصف {filter_grade} حتى الآن.")
+                        st.info(f"لا توجد أي نتائج مسجلة لصف {filter_grade}.")
                 else:
                     c_sel_ex.info("يرجى اختيار الصف أولاً")
-                    st.info("👆 يرجى اختيار الصف الدراسي لتظهر لك قائمة اختباراته الخاصة.")
+                    st.info("👆 يرجى اختيار الصف الدراسي لتظهر لك قائمة اختباراته السابقة والحالية.")
             else:
-                st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
+                st.info("لا توجد أي نتائج مسجلة في المنصة بعد. تأكد من أن رابط جوجل شيت للتسليمات يعمل بشكل صحيح.")
 
         # TAB 3: DEDICATED GRADE REPORT
         with tab_grades_report:
@@ -1042,78 +1044,80 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             subs_g = load_submissions()
             
             if subs_g:
-                selected_report_grade = st.selectbox("اختر الصف الدراسي لعرض كشف درجاته الكامل:", GRADES_LIST, key="dedicated_grade_sel")
+                available_g_subs = list(set([s.get('grade') for _, s in subs_g.items() if s.get('grade')]))
+                selected_report_grade = st.selectbox("اختر الصف الدراسي لعرض كشف درجاته الكامل:", ["-- اختر الصف --"] + available_g_subs, key="dedicated_grade_sel")
                 
-                g_records = []
-                for _, s_data in subs_g.items():
-                    if s_data.get('grade') == selected_report_grade:
-                        raw_name = str(s_data.get('full_name', '')).strip()
-                        clean_n = clean_text_for_grading(raw_name)
-                        phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
-                        if len(phone_clean) > 10:
-                            phone_clean = phone_clean[-10:]
-                        unique_key = f"{phone_clean}_{clean_n}"
+                if selected_report_grade != "-- اختر الصف --":
+                    g_records = []
+                    for _, s_data in subs_g.items():
+                        if s_data.get('grade') == selected_report_grade:
+                            raw_name = str(s_data.get('full_name', '')).strip()
+                            clean_n = clean_text_for_grading(raw_name)
+                            phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
+                            if len(phone_clean) > 10:
+                                phone_clean = phone_clean[-10:]
+                            unique_key = f"{phone_clean}_{clean_n}"
+                            
+                            g_records.append({
+                                "unique_id": unique_key,
+                                "name": raw_name,
+                                "phone": s_data.get('phone', ''),
+                                "exam": s_data.get('exam_title', s_data.get('exam_key', '')),
+                                "score": s_data.get('score', 0),
+                                "total": s_data.get('total', 0),
+                                "percentage": s_data.get('percentage', 0),
+                                "timestamp": s_data.get('timestamp', '')
+                            })
+                    
+                    if g_records:
+                        df_g_raw = pd.DataFrame(g_records)
+                        df_g_raw = df_g_raw.sort_values(by=["percentage", "score", "timestamp"], ascending=[False, False, True])
+                        df_g_raw = df_g_raw.drop_duplicates(subset=["unique_id"], keep="first")
                         
-                        g_records.append({
-                            "unique_id": unique_key,
-                            "name": raw_name,
-                            "phone": s_data.get('phone', ''),
-                            "exam": s_data.get('exam_title', s_data.get('exam_key', '')),
-                            "score": s_data.get('score', 0),
-                            "total": s_data.get('total', 0),
-                            "percentage": s_data.get('percentage', 0),
-                            "timestamp": s_data.get('timestamp', '')
-                        })
-                
-                if g_records:
-                    df_g_raw = pd.DataFrame(g_records)
-                    df_g_raw = df_g_raw.sort_values(by=["percentage", "score", "timestamp"], ascending=[False, False, True])
-                    df_g_raw = df_g_raw.drop_duplicates(subset=["unique_id"], keep="first")
-                    
-                    g_records_clean = df_g_raw.to_dict('records')
-                    
-                    st.success(f"إجمالي عدد الطلاب الفريدين في {selected_report_grade}: **{len(g_records_clean)} طالب**")
+                        g_records_clean = df_g_raw.to_dict('records')
+                        
+                        st.success(f"إجمالي عدد الطلاب الفريدين في {selected_report_grade}: **{len(g_records_clean)} طالب**")
 
-                    report_winners = []
-                    for r in sorted(g_records_clean, key=lambda x: (x['percentage'], x['score'], x['timestamp']), reverse=True):
-                        report_winners.append({
-                            "name": r["name"],
-                            "grade": selected_report_grade,
-                            "score": r["percentage"],
-                            "marks": f"{r['score']}/{r['total']}"
-                        })
-                    
-                    render_honor_card_widget(
-                        selected_report_grade,
-                        "تقرير درجات الطلاب الكامل",
-                        report_winners,
-                        card_id=f"grade-report-{selected_report_grade.replace(' ', '-').replace('(', '').replace(')', '')}"
-                    )
-                    
-                    st.write("---")
-                    st.markdown("#### 📋 جدول البيانات الكامل:")
-                    df_grade_only = pd.DataFrame([{
-                        "اسم الطالب": x["name"],
-                        "رقم الهاتف": x["phone"],
-                        "عنوان الاختبار": x["exam"],
-                        "الدرجة": x["score"],
-                        "المجموع": x["total"],
-                        "النسبة المئوية (%)": f"{x['percentage']}%",
-                        "وقت التسليم": clean_time_display(x["timestamp"])
-                    } for x in g_records_clean])
-                    
-                    st.dataframe(df_grade_only, use_container_width=True)
-                    
-                    clean_g_name = selected_report_grade.split(' ')[0]
-                    csv_grade_data = df_grade_only.to_csv(index=False).encode('utf-8-sig')
-                    st.download_button(
-                        label=f"📥 تحميل كشف درجات ({selected_report_grade}) بصيغة Excel",
-                        data=csv_grade_data,
-                        file_name=f"Report_{clean_g_name}_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.info(f"لا توجد أي تسليمات مسجلة لطلاب {selected_report_grade} حتى الآن.")
+                        report_winners = []
+                        for r in sorted(g_records_clean, key=lambda x: (x['percentage'], x['score'], x['timestamp']), reverse=True):
+                            report_winners.append({
+                                "name": r["name"],
+                                "grade": selected_report_grade,
+                                "score": r["percentage"],
+                                "marks": f"{r['score']}/{r['total']}"
+                            })
+                        
+                        render_honor_card_widget(
+                            selected_report_grade,
+                            "تقرير درجات الطلاب الكامل",
+                            report_winners,
+                            card_id=f"grade-report-{selected_report_grade.replace(' ', '-').replace('(', '').replace(')', '')}"
+                        )
+                        
+                        st.write("---")
+                        st.markdown("#### 📋 جدول البيانات الكامل:")
+                        df_grade_only = pd.DataFrame([{
+                            "اسم الطالب": x["name"],
+                            "رقم الهاتف": x["phone"],
+                            "عنوان الاختبار": x["exam"],
+                            "الدرجة": x["score"],
+                            "المجموع": x["total"],
+                            "النسبة المئوية (%)": f"{x['percentage']}%",
+                            "وقت التسليم": clean_time_display(x["timestamp"])
+                        } for x in g_records_clean])
+                        
+                        st.dataframe(df_grade_only, use_container_width=True)
+                        
+                        clean_g_name = selected_report_grade.split(' ')[0]
+                        csv_grade_data = df_grade_only.to_csv(index=False).encode('utf-8-sig')
+                        st.download_button(
+                            label=f"📥 تحميل كشف درجات ({selected_report_grade}) بصيغة Excel",
+                            data=csv_grade_data,
+                            file_name=f"Report_{clean_g_name}_{datetime.now().strftime('%Y%m%d')}.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.info(f"لا توجد أي تسليمات مسجلة لطلاب {selected_report_grade}.")
             else:
                 st.info("لا توجد بيانات مسجلة في المنصة بعد.")
 
