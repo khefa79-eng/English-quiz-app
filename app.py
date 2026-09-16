@@ -9,20 +9,22 @@ from datetime import datetime, timezone, timedelta, date
 import pandas as pd
 import pypdf
 
-# تعيين وضع العرض ليكون عريضاً بالكامل (Wide Layout) ومتوافقاً مع كل الأجهزة
+try:
+    import pytesseract
+    from PIL import Image
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+
 st.set_page_config(
     page_title="Mrs. Kheffa Eletreby | English Assessments",
     page_icon="📝",
     layout="wide"
 )
 
-# Egypt Local Time (UTC + 3 Hours)
 EGYPT_TIMEZONE = timezone(timedelta(hours=3))
-
-# Term Start Anchor: Saturday, August 29, 2026
 ACADEMIC_START_DATE = date(2026, 8, 29)
 
-# روابط الـ Google Apps Script الخاصة بكِ للحفظ الدائم
 EXAM_API_URL = "https://script.google.com/macros/s/AKfycbxK81pBCL75pIssvIQEqvCTvVqVMead9ro3hT9RrnLi8a067MIcPQkelESJaCaLrcPM/exec"
 SUBMISSION_API_URL = "https://script.google.com/macros/s/AKfycbwCg2s41mVVD3Uo3A3c8dFhFQY1bS12OaAJ7vcZ-HhIhQ-X7LNPvWbhqi0Lhn0mFS-bmw/exec"
 
@@ -41,7 +43,6 @@ st.markdown("""
     .main-title-box h3 { font-size: 1.25rem; margin: 6px 0; color: #E0E7FF; font-weight: 600; }
     .main-title-box p { font-size: 1rem; margin: 0; color: #DBEAFE; }
 
-    /* تنسيق لترتيب وتوسيع عروض التبويبات داخل لوحة التحكم */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
         width: 100%;
@@ -219,7 +220,6 @@ def calculate_custom_academic_week(sub_date):
     label = f"Week {week_num} (من {start_of_week.strftime('%Y-%m-%d')} إلى {end_of_week.strftime('%Y-%m-%d')})"
     return label, week_num
 
-# --- دوال الربط بـ Google Sheets ---
 def load_exam_bank():
     try:
         req = urllib.request.Request(EXAM_API_URL, headers={'User-Agent': 'Mozilla/5.0'})
@@ -403,7 +403,7 @@ def parse_text_locally(text):
             while i < len(lines):
                 sub_line = lines[i]
                 if re.search(r'(?i)^answer\s*:', sub_line):
-                    answer = re.sub(r'(?i)^answer\s*:\s*', '', sub_line).strip()
+                    answer = re.sub(r'(?i)^answer\s*:', '', sub_line).strip()
                     i += 1
                     break
                 elif re.search(r'(?i)^options\s*:', sub_line):
@@ -512,7 +512,6 @@ def render_speech_player(text_to_read):
     """
     st.components.v1.html(audio_html, height=60)
 
-# --- دالة كارت الشرف والتقرير الشامل (دمج الطالب برقم الهاتف لعدم التكرار نهائياً) ---
 def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor-certificate-card"):
     unique_students_map = {}
     for w in winners_list:
@@ -584,7 +583,6 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
     """
     st.components.v1.html(widget_html, height=len(deduplicated_winners) * 65 + 340)
 
-# --- EXAM LOCATOR ---
 exam_bank = load_exam_bank()
 active_grades_map = load_active_grades()
 query_params = st.query_params
@@ -653,7 +651,6 @@ if not resolved_grade and not active_exam:
                 st.query_params["g"] = code
                 st.rerun()
 
-# --- STUDENT EXAM VIEW ---
 if active_exam and active_exam.get("questions"):
     questions = active_exam["questions"]
     q_title = active_exam.get("title", "English Assessment")
@@ -796,7 +793,6 @@ if active_exam and active_exam.get("questions"):
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
-        # Results View
         if st.session_state.get('exam_submitted', False):
             st.subheader("📋 Results & Model Answers")
             score = 0
@@ -831,7 +827,7 @@ if active_exam and active_exam.get("questions"):
             st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
             breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
             
-            , percentage)
+            record_submission_to_sheet(active_exam_key, full_exam_desc, active_student, active_phone, resolved_grade, score, total, percentage)
             
             teacher_phone = "201090570624"
             whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(breakdown_text)}"
@@ -846,7 +842,6 @@ if active_exam and active_exam.get("questions"):
 elif resolved_grade:
     st.info(f"👋 لا يوجد اختبار نشط حالياً لصف **{resolved_grade}**. يرجى من المعلمة تفعيل الاختبار من لوحة التحكم.")
 
-# --- TEACHER CONTROL PORTAL & SINGLE-GRADE FOCUS ARCHIVE ---
 st.write("---")
 with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلمة)", expanded=False):
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
@@ -863,7 +858,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             "➕ إضافة اختبار"
         ])
         
-        # TAB 1: CUSTOM ACADEMIC WEEKLY HONOR ROLL
         with tab_weekly:
             st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع (Weekly Honor Roll)")
             subs = load_submissions()
@@ -955,7 +949,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد تسليمات مسجلة لتوليد لوحة شرف الأسابيع بعد.")
 
-        # TAB 2: GENERAL REPORTS - DEDICATED PER-EXAM REPORT (يعرض جميع الصفوف بدون استثناء)
         with tab_reports:
             st.markdown("### 📊 تقرير درجات الطلاب (كافة الصفوف والاختبارات السابقة والحالية)")
             subs = load_submissions()
@@ -983,7 +976,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     })
                 df_all = pd.DataFrame(records)
                 
-                # استخدام قائمة الصفوف الكاملة بدلاً من المصفاة لضمان ظهور كل الصفوف
                 c_sel_gr, c_sel_ex = st.columns([1.5, 2])
                 filter_grade = c_sel_gr.selectbox(
                     "1️⃣ اختر الصف الدراسي المطلوب:",
@@ -1051,7 +1043,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
 
-        # TAB 3: DEDICATED GRADE REPORT
         with tab_grades_report:
             st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع منع تكرار الطلاب بالكامل)")
             subs_g = load_submissions()
@@ -1134,7 +1125,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد بيانات مسجلة في المنصة بعد.")
 
-        # TAB 4: BROWSE EXAM BANK
         with tab_bank:
             st.markdown("### 🔍 اختاري الصف الدراسي المطلوب:")
             selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
@@ -1216,7 +1206,6 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
 
-        # TAB 5: BEAUTIFUL PRINTABLE/PDF EXPORT WITH AUTO FILENAME
         with tab_pdf:
             st.markdown("### 📄 المعاينة البصرية والطباعة بصيغة PDF (مناقشة الشرح مع الطلاب)")
             pdf_grade = st.selectbox("اختر الصف الدراسي للاختبار:", GRADES_LIST, key="pdf_grade_sel")
@@ -1290,29 +1279,30 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد مستندها.")
 
-        # TAB 6: ADD NEW EXAM
         with tab_new:
-            st.markdown("#### 📝 تجهيز ومعاينة وفحص واستبعاد تلقائي للأسئلة الوهمية")
+            st.markdown("### ➕ إضافة اختبار جديد (قراءة تلقائية لملفات الـ PDF والـ OCR)")
+            
             c_g, c_u, c_l = st.columns([2, 1, 1])
             sel_grade = c_g.selectbox("الصف الدراسي المستهدف:", GRADES_LIST, key="new_exam_grade")
             quiz_unit = c_u.text_input("الوحدة (Unit):", "Unit 1", key="exam_unit_input")
             quiz_lesson = c_l.text_input("الدرس (Lesson):", "Lesson 1", key="exam_lesson_input")
-            
             quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
             
-            uploaded_file = st.file_uploader("📂 ارفعي ملف الأسئلة أو صورة الـ OCR / Screenshot:", type=["pdf", "docx", "txt", "png", "jpg", "jpeg"], key="quiz_file_uploader")
+            uploaded_file = st.file_uploader("📂 ارفعي ملف الأسئلة (.pdf أو صورة OCR / Screenshot):", type=["pdf", "docx", "txt", "png", "jpg", "jpeg"], key="quiz_file_uploader")
             
-            file_text_content = ""
+            if 'extracted_file_text' not in st.session_state:
+                st.session_state['extracted_file_text'] = ""
+
             if uploaded_file is not None:
                 try:
                     if uploaded_file.name.endswith('.txt'):
-                        file_text_content = uploaded_file.read().decode('utf-8')
-                        st.success("📁 تم قراءة ملف النصوص بنجاح!")
+                        st.session_state['extracted_file_text'] = uploaded_file.read().decode('utf-8')
+                        st.success("📁 تم قراءة ملف النصوص بنجاح ووضعه في مربع النص أدناه تلقائياً!")
                     elif uploaded_file.name.endswith('.docx'):
                         import docx
                         doc = docx.Document(uploaded_file)
-                        file_text_content = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
-                        st.success("📁 تم قراءة ملف الـ Word بنجاح!")
+                        st.session_state['extracted_file_text'] = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
+                        st.success("📁 تم قراءة ملف الـ Word بنجاح ووضعه في مربع النص أدناه تلقائياً!")
                     elif uploaded_file.name.endswith('.pdf'):
                         reader = pypdf.PdfReader(uploaded_file)
                         extracted_pages = []
@@ -1320,23 +1310,24 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                             txt = page.extract_text()
                             if txt:
                                 extracted_pages.append(txt)
-                        file_text_content = "\n".join(extracted_pages)
-                        if file_text_content.strip():
-                            st.success("📄 تم استخراج نصوص الـ PDF تلقائياً بنجاح!")
+                        extracted_content = "\n".join(extracted_pages)
+                        if extracted_content.strip():
+                            st.session_state['extracted_file_text'] = extracted_content
+                            st.success("📄 تم فك واستخراج نصوص الـ PDF بالكامل ولصقها في مربع النص أدناه تلقائياً!")
                         else:
-                            st.warning("⚠️ ملف الـ PDF المرفوع ممسوح ضوئياً (Scanned). يرجى لصق نصوصه في المربع أدناه.")
+                            st.warning("⚠️ ملف الـ PDF ممسوح ضوئياً (صورة). يرجى لصق النصوص يدوياً أو استخدام صورة.")
                     elif uploaded_file.name.endswith(('.png', '.jpg', '.jpeg')):
                         if OCR_AVAILABLE:
                             img = Image.open(uploaded_file)
                             ocr_text = pytesseract.image_to_string(img)
-                            file_text_content = ocr_text
-                            st.success("🖼️ تم تحليل الصورة وقراءة النصوص عبر تقنية OCR بنجاح!")
+                            st.session_state['extracted_file_text'] = ocr_text
+                            st.success("🖼️ تم تحليل الصورة وقراءة النصوص عبر تقنية OCR ولصقها تلقائياً!")
                         else:
-                            st.warning("⚠️ مكتبة الـ OCR غير مفعلة بيئياً. يرجى لصق النصوص يدوياً أدناه.")
+                            st.warning("⚠️ مكتبة الـ OCR غير مفعلة. يرجى لصق النصوص يدوياً.")
                 except Exception as e:
-                    st.error(f"⚠️ حدث خطأ أثناء قراءة الملف: {e}")
+                    st.error(f"⚠️ حدث خطأ أثناء فك الملف: {e}")
 
-            raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا (أو سيظهر محتوى الملف المرفوع تلقائياً):", value=file_text_content, height=180, key="new_raw_text")
+            raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا:", value=st.session_state['extracted_file_text'], height=220, key="new_raw_text")
             
             if st.button("🔍 فحص واستبعاد الأسئلة الوهمية تلقائياً (Anti-Dummy)", key="preview_btn"):
                 if raw_text.strip():
@@ -1374,7 +1365,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     raw_parsed = parse_text_locally(raw_text)
                     parsed, _ = auto_clean_quiz_questions(raw_parsed)
                     
-                    if parsed and len(parsed> 0):
+                    if parsed and len(parsed) > 0:
                         exam_id = f"exam_{int(datetime.now().timestamp())}"
                         exam_payload = {
                             "title": quiz_title.strip(),
