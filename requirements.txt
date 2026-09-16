@@ -1,4 +1,5 @@
 streamlit
-google-genai
-PyPDF2
-Pillow
+pandas
+pypdf
+python-docx
+pillow
