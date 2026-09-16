@@ -9,14 +9,6 @@ from datetime import datetime, timezone, timedelta, date
 import pandas as pd
 import pypdf
 
-# محاولة استيراد مكتبات الـ OCR وقراءة الصور لاستخراج النصوص بدقة عالية
-try:
-    import pytesseract
-    from PIL import Image
-    OCR_AVAILABLE = True
-except ImportError:
-    OCR_AVAILABLE = False
-
 # تعيين وضع العرض ليكون عريضاً بالكامل (Wide Layout) ومتوافقاً مع كل الأجهزة
 st.set_page_config(
     page_title="Mrs. Kheffa Eletreby | English Assessments",
@@ -839,7 +831,7 @@ if active_exam and active_exam.get("questions"):
             st.info(f"### 🏆 Final Score: {score} / {total} ({percentage}%)")
             breakdown_text += f"\n*Final Score:* {score}/{total} ({percentage}%)"
             
-            record_submission_to_sheet(active_exam_key, full_exam_desc, active_student, active_phone, resolved_grade, score, total, percentage)
+            , percentage)
             
             teacher_phone = "201090570624"
             whatsapp_url = f"https://wa.me/{teacher_phone}?text={urllib.parse.quote(breakdown_text)}"
@@ -860,7 +852,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بتقنية التعرف الضوئي OCR لاستخراج النصوص من ملفات الـ PDF والصور.")
+        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بعرض كافة الامتحانات والتقارير.")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
@@ -963,9 +955,9 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info("لا توجد تسليمات مسجلة لتوليد لوحة شرف الأسابيع بعد.")
 
-        # TAB 2: GENERAL REPORTS - DEDICATED PER-EXAM REPORT
+        # TAB 2: GENERAL REPORTS - DEDICATED PER-EXAM REPORT (يعرض جميع الصفوف بدون استثناء)
         with tab_reports:
-            st.markdown("### 📊 تقرير درجات الطلاب (جميع الامتحانات السابقة والحالية لكل صف واختبار)")
+            st.markdown("### 📊 تقرير درجات الطلاب (كافة الصفوف والاختبارات السابقة والحالية)")
             subs = load_submissions()
             
             if subs:
@@ -991,12 +983,11 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     })
                 df_all = pd.DataFrame(records)
                 
-                available_grades_in_subs = list(df_all["الصف الدراسي"].unique())
-                
+                # استخدام قائمة الصفوف الكاملة بدلاً من المصفاة لضمان ظهور كل الصفوف
                 c_sel_gr, c_sel_ex = st.columns([1.5, 2])
                 filter_grade = c_sel_gr.selectbox(
                     "1️⃣ اختر الصف الدراسي المطلوب:",
-                    ["-- اختر الصف --"] + available_grades_in_subs,
+                    ["-- اختر الصف --"] + GRADES_LIST,
                     key="report_grade_filter"
                 )
                 
@@ -1053,12 +1044,12 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         else:
                             st.info("👆 يرجى اختيار الاختبار المطلوب من القائمة المجاورة لعرض تقريره.")
                     else:
-                        st.info(f"لا توجد أي نتائج مسجلة لصف {filter_grade}.")
+                        st.info(f"لا توجد أي نتائج مسجلة لصف {filter_grade} حتى الآن.")
                 else:
                     c_sel_ex.info("يرجى اختيار الصف أولاً")
                     st.info("👆 يرجى اختيار الصف الدراسي لتظهر لك قائمة اختباراته السابقة والحالية.")
             else:
-                st.info("لا توجد أي نتائج مسجلة في المنصة بعد. تأكد من أن رابط جوجل شيت للتسليمات يعمل بشكل صحيح.")
+                st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
 
         # TAB 3: DEDICATED GRADE REPORT
         with tab_grades_report:
@@ -1066,8 +1057,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             subs_g = load_submissions()
             
             if subs_g:
-                available_g_subs = list(set([s.get('grade') for _, s in subs_g.items() if s.get('grade')]))
-                selected_report_grade = st.selectbox("اختر الصف الدراسي لعرض كشف درجاته الكامل:", ["-- اختر الصف --"] + available_g_subs, key="dedicated_grade_sel")
+                selected_report_grade = st.selectbox("اختر الصف الدراسي لعرض كشف درجاته الكامل:", ["-- اختر الصف --"] + GRADES_LIST, key="dedicated_grade_sel")
                 
                 if selected_report_grade != "-- اختر الصف --":
                     g_records = []
@@ -1300,7 +1290,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
             else:
                 st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد مستندها.")
 
-        # TAB 6: ADD NEW EXAM (مع دعم كامل لصور الـ OCR وملفات الـ PDF والوورد)
+        # TAB 6: ADD NEW EXAM
         with tab_new:
             st.markdown("#### 📝 تجهيز ومعاينة وفحص واستبعاد تلقائي للأسئلة الوهمية")
             c_g, c_u, c_l = st.columns([2, 1, 1])
@@ -1384,7 +1374,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     raw_parsed = parse_text_locally(raw_text)
                     parsed, _ = auto_clean_quiz_questions(raw_parsed)
                     
-                    if parsed and len(parsed) > 0:
+                    if parsed and len(parsed> 0):
                         exam_id = f"exam_{int(datetime.now().timestamp())}"
                         exam_payload = {
                             "title": quiz_title.strip(),
