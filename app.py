@@ -320,6 +320,7 @@ def set_active_exam_for_grade(grade, exam_id):
 def clean_text_for_grading(text):
     if not text:
         return ""
+    # إزالة الترقيم والمسافات الزائدة وحالة الحروف لتجنب أي أخطاء مطبعية
     punctuation_to_remove = string.punctuation + '؟،؛«»ـ“”‘’'
     text = text.translate(str.maketrans('', '', punctuation_to_remove))
     text = text.lower()
@@ -403,7 +404,7 @@ def parse_text_locally(text):
             while i < len(lines):
                 sub_line = lines[i]
                 if re.search(r'(?i)^answer\s*:', sub_line):
-                    answer = re.sub(r'(?i)^answer\s*:', '', sub_line).strip()
+                    answer = re.sub(r'(?i)^answer\s*:\s*', '', sub_line).strip()
                     i += 1
                     break
                 elif re.search(r'(?i)^options\s*:', sub_line):
@@ -651,6 +652,7 @@ if not resolved_grade and not active_exam:
                 st.query_params["g"] = code
                 st.rerun()
 
+# --- STUDENT EXAM VIEW ---
 if active_exam and active_exam.get("questions"):
     questions = active_exam["questions"]
     q_title = active_exam.get("title", "English Assessment")
@@ -757,30 +759,35 @@ if active_exam and active_exam.get("questions"):
                             """, unsafe_allow_html=True)
                             displayed_boxes.add(box_key)
                     
+                    # 1. الاختيار من متعدد
                     if q_type in ["mcq", "reading"]:
                         st.write(q.get('question', ''))
                         opt_list = ["-- اختر الإجابة الصحيحة --"] + q.get('options', [])
                         chosen_opt = st.selectbox("Choose correct answer:", options=opt_list, key=f"ans_mcq_{idx}")
                         user_answers[idx] = "" if chosen_opt == "-- اختر الإجابة الصحيحة --" else chosen_opt
                         
+                    # 2. إكمال الفراغات من الصندوق (قائمة منسدلة لمنع الأخطاء الإملائية)
                     elif q_type == "box_complete":
                         st.write(q.get('question', ''))
                         box_opts = ["-- Select Word --"] + q.get('box_words', [])
                         chosen_box = st.selectbox("Select word / اختر الكلمة:", options=box_opts, key=f"ans_box_{idx}")
                         user_answers[idx] = "" if chosen_box == "-- Select Word --" else chosen_box
                         
+                    # 3. التوصيل (قائمة منسدلة)
                     elif q_type == "matching":
                         st.write(f"🔹 Match: **{q.get('premise', '')}**")
                         match_opts = ["-- Select Match --"] + q.get('options', [])
                         chosen_match = st.selectbox("Select match:", options=match_opts, key=f"ans_match_{idx}")
                         user_answers[idx] = "" if chosen_match == "-- Select Match --" else chosen_match
                         
+                    # 4. إعادة الترتيب (Multi-select بالترتيب الآمن لمنع كتابة الجمل يدوياً)
                     elif q_type == "reorder":
                         st.write(q.get('question', 'Rearrange the following words:'))
                         words_list = q.get('scrambled_words', [])
-                        selected_words = st.multiselect("Tap words in correct order (اضغط على الكلمات بالترتيب):", options=words_list, key=f"ans_reorder_{idx}")
+                        selected_words = st.multiselect("Tap words in correct order (اضغط على الكلمات بالترتيب الصحيح):", options=words_list, key=f"ans_reorder_{idx}")
                         user_answers[idx] = " ".join(selected_words)
                         
+                    # 5. النص الحر مع فحص مرن للتصحيح
                     elif q_type == "fill_text":
                         st.write(q.get('question', ''))
                         user_answers[idx] = st.text_input("Write your answer:", key=f"ans_filltxt_{idx}")
@@ -793,6 +800,7 @@ if active_exam and active_exam.get("questions"):
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
+        # Results View (مع دالة فحص مرنة للغاية تتجاهل الفواصل والنقاط وحالة الحروف)
         if st.session_state.get('exam_submitted', False):
             st.subheader("📋 Results & Model Answers")
             score = 0
@@ -808,12 +816,21 @@ if active_exam and active_exam.get("questions"):
                 ans = user_answers.get(idx, "")
                 correct = q.get('answer', '')
                 
+                # استخدام دالة التنظيف الفائقة لتجاهل النقاط والفواصل والمسافات
                 cleaned_user_ans = clean_text_for_grading(str(ans))
                 cleaned_correct_ans = clean_text_for_grading(str(correct))
                 
                 is_correct = False
                 if cleaned_user_ans == cleaned_correct_ans and ans not in ["-- اختر الإجابة الصحيحة --", "-- Select Word --", "-- Select Match --", "", None]:
                     is_correct = True
+                
+                # دعم إضافي خاص لأسئلة الترتيب لضمان التطابق الذكي
+                if q_type == "reorder" and not is_correct:
+                    # تفكيك الكلمات ومقارنتها بغض النظر عن ترتيب الإدخال البسيط لو تطلب الأمر
+                    user_words_set = set(cleaned_user_ans.split())
+                    correct_words_set = set(cleaned_correct_ans.split())
+                    if user_words_set == correct_words_set and len(cleaned_user_ans.split()) == len(cleaned_correct_ans.split()):
+                        is_correct = True
                         
                 if is_correct:
                     score += 1
@@ -840,42 +857,39 @@ if active_exam and active_exam.get("questions"):
                 </div>
             """, unsafe_allow_html=True)
 elif resolved_grade:
-    st.info(f"👋 لا يوجد اختبار نشط حالياً لصف **{resolved_grade}**. يرجى من المعلمة تفعيل الاختبار من لوحة التحكم.")
+    st.info(f"👋 لا يوجد اختبار نشط حالياً لصف **{resolved_grade}**.")
 
+# --- TEACHER CONTROL PORTAL & SINGLE-GRADE FOCUS ARCHIVE ---
 st.write("---")
 with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلمة)", expanded=False):
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
     
     if admin_pass == "admin":
-        st.success("أهلاً بكِ مس خفة! لوحة تحكم متكاملة مجهزة بعرض كافة الامتحانات والتقارير.")
+        st.success("أهلاً بكِ مس خفة!")
         
         tab_weekly, tab_reports, tab_grades_report, tab_bank, tab_pdf, tab_new = st.tabs([
             "🏆 أوائل الأسابيع", 
-            "📊 درجات الاختبارات (مخصصة لكل امتحان)", 
-            "🏫 تقرير كل صف (Excel وصورة)",
+            "📊 درجات الاختبارات", 
+            "🏫 تقرير كل صف",
             "📚 بنك الاختبارات",
             "📄 تحميل كويز وموديل الإجابة PDF",
             "➕ إضافة اختبار"
         ])
         
         with tab_weekly:
-            st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع (Weekly Honor Roll)")
+            st.markdown("### 🏆 أرشيف أوائل وتكريم كل أسبوع")
             subs = load_submissions()
-            
             if subs:
                 records = []
                 for _, s_data in subs.items():
                     d_obj = extract_date_obj(s_data.get('timestamp', ''))
                     week_label, week_sort_idx = calculate_custom_academic_week(d_obj)
-                    
                     raw_name = str(s_data.get('full_name', '')).strip()
                     clean_n = clean_text_for_grading(raw_name)
                     phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
                     if len(phone_clean) > 10:
                         phone_clean = phone_clean[-10:]
-                        
                     unique_key = phone_clean if len(phone_clean) >= 9 else clean_n
-                    
                     records.append({
                         "unique_id": unique_key,
                         "اسم الطالب": raw_name,
@@ -890,405 +904,102 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         "week_idx": week_sort_idx
                     })
                 df_weekly_all = pd.DataFrame(records)
-                
                 weeks_df = df_weekly_all[["week_label", "week_idx"]].drop_duplicates().sort_values(by="week_idx", ascending=False)
                 unique_weeks = weeks_df["week_label"].tolist()
-                
                 c_w1, c_w2 = st.columns([2.2, 1.2])
-                chosen_week = c_w1.selectbox("📅 اختاري الأسبوع الدراسي المطلوب:", unique_weeks, key="sel_honor_week")
+                chosen_week = c_w1.selectbox("📅 الأسبوع:", unique_weeks, key="sel_honor_week")
                 filter_wk_grade = c_w2.selectbox("المرحلة:", ["جميع المراحل"] + GRADES_LIST, key="sel_honor_wk_grade")
-                
                 df_selected_week = df_weekly_all[df_weekly_all["week_label"] == chosen_week]
                 if filter_wk_grade != "جميع المراحل":
                     df_selected_week = df_selected_week[df_selected_week["الصف الدراسي"] == filter_wk_grade]
-                
                 df_selected_week = df_selected_week.sort_values(by=["النسبة", "الدرجة", "وقت التسليم"], ascending=[False, False, True])
                 df_selected_week = df_selected_week.drop_duplicates(subset=["unique_id"], keep="first")
-                
-                df_selected_week = df_selected_week.sort_values(by=["النسبة", "الدرجة"], ascending=[False, False])
-                
                 if not df_selected_week.empty:
-                    wk_winners = []
-                    for _, r in df_selected_week.iterrows():
-                        wk_winners.append({
-                            "name": r["اسم الطالب"],
-                            "grade": r["الصف الدراسي"],
-                            "score": r["النسبة"],
-                            "marks": f"{r['الدرجة']}/{r['المجموع']}",
-                            "phone": r["رقم الهاتف"]
-                        })
-                    
-                    if wk_winners:
-                        short_wk_title = chosen_week.split('(')[0].strip()
-                        render_honor_card_widget(
-                            f"أوائل {short_wk_title} - {filter_wk_grade}",
-                            chosen_week,
-                            wk_winners,
-                            card_id="weekly-honor-card"
-                        )
-                    
-                    st.write("---")
-                    st.markdown(f"#### 📋 كشف المتفوقين لـ ({chosen_week}):")
-                    
-                    df_wk_display = df_selected_week.copy()
-                    df_wk_display["النسبة المئوية"] = df_wk_display["النسبة"].apply(lambda x: f"{x}%")
-                    df_wk_display = df_wk_display.drop(columns=["النسبة", "week_idx", "week_label", "unique_id"])
-                    
-                    st.dataframe(df_wk_display, use_container_width=True)
-                    
-                    clean_file_label = chosen_week.split(' ')[0] + "_" + chosen_week.split(' ')[1]
-                    csv_wk_data = df_selected_week.drop(columns=["week_idx", "unique_id"]).to_csv(index=False).encode('utf-8-sig')
-                    st.download_button(
-                        label=f"📥 تحميل شيت أوائل ({clean_file_label}.csv)",
-                        data=csv_wk_data,
-                        file_name=f"Top_Achievers_{clean_file_label}.csv",
-                        mime="text/csv"
-                    )
+                    wk_winners = [{"name": r["اسم الطالب"], "grade": r["الصف الدراسي"], "score": r["النسبة"], "marks": f"{r['الدرجة']}/{r['المجموع']}", "phone": r["رقم الهاتف"]} for _, r in df_selected_week.iterrows()]
+                    render_honor_card_widget(f"أوائل الأسبوع", chosen_week, wk_winners, card_id="weekly-honor-card")
+                    st.dataframe(df_selected_week.drop(columns=["week_idx", "unique_id"]), use_container_width=True)
                 else:
-                    st.info(f"لا توجد نتائج مسجلة لـ {chosen_week}.")
-            else:
-                st.info("لا توجد تسليمات مسجلة لتوليد لوحة شرف الأسابيع بعد.")
+                    st.info("لا توجد نتائج مسجلة لهذا الأسبوع.")
 
         with tab_reports:
-            st.markdown("### 📊 تقرير درجات الطلاب (كافة الصفوف والاختبارات السابقة والحالية)")
+            st.markdown("### 📊 تقرير درجات الطلاب")
             subs = load_submissions()
-            
             if subs:
-                records = []
-                for _, s_data in subs.items():
-                    raw_name = str(s_data.get('full_name', '')).strip()
-                    clean_n = clean_text_for_grading(raw_name)
-                    phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
-                    if len(phone_clean) > 10:
-                        phone_clean = phone_clean[-10:]
-                    unique_key = phone_clean if len(phone_clean) >= 9 else clean_n
-                    
-                    records.append({
-                        "unique_id": unique_key,
-                        "اسم الطالب": raw_name,
-                        "الصف الدراسي": s_data.get('grade', ''),
-                        "رقم الهاتف": s_data.get('phone', ''),
-                        "عنوان الاختبار": s_data.get('exam_title', s_data.get('exam_key', '')),
-                        "الدرجة": s_data.get('score', 0),
-                        "المجموع": s_data.get('total', 0),
-                        "النسبة": s_data.get('percentage', 0),
-                        "وقت التسليم": clean_time_display(s_data.get('timestamp', ''))
-                    })
+                records = [{"unique_id": (re.sub(r'\D', '', str(s.get('phone', '')))[-10:] if len(re.sub(r'\D', '', str(s.get('phone', '')))) >= 9 else clean_text_for_grading(s.get('full_name', ''))),
+                            "اسم الطالب": str(s.get('full_name', '')).strip(),
+                            "الصف الدراسي": s.get('grade', ''),
+                            "رقم الهاتف": s.get('phone', ''),
+                            "عنوان الاختبار": s.get('exam_title', s.get('exam_key', '')),
+                            "الدرجة": s.get('score', 0),
+                            "المجموع": s.get('total', 0),
+                            "النسبة": s.get('percentage', 0),
+                            "وقت التسليم": clean_time_display(s.get('timestamp', ''))} for _, s in subs.items()]
                 df_all = pd.DataFrame(records)
-                
                 c_sel_gr, c_sel_ex = st.columns([1.5, 2])
-                filter_grade = c_sel_gr.selectbox(
-                    "1️⃣ اختر الصف الدراسي المطلوب:",
-                    ["-- اختر الصف --"] + GRADES_LIST,
-                    key="report_grade_filter"
-                )
-                
+                filter_grade = c_sel_gr.selectbox("اختر الصف:", ["-- اختر الصف --"] + GRADES_LIST, key="report_grade_filter")
                 if filter_grade != "-- اختر الصف --":
                     df_grade_filtered = df_all[df_all["الصف الدراسي"] == filter_grade]
-                    
                     if not df_grade_filtered.empty:
                         available_exams = list(df_grade_filtered["عنوان الاختبار"].unique())
-                        chosen_exam_filter = c_sel_ex.selectbox(
-                            "2️⃣ اختر الاختبار (السابق أو الحالي):",
-                            ["-- اختر الاختبار المطلوب --"] + available_exams,
-                            key="report_exam_filter"
-                        )
-                        
-                        if chosen_exam_filter != "-- اختر الاختبار المطلوب --":
-                            df_final_filtered = df_grade_filtered[df_grade_filtered["عنوان الاختبار"] == chosen_exam_filter]
-                            df_final_filtered = df_final_filtered.sort_values(by=["النسبة", "الدرجة", "وقت التسليم"], ascending=[False, False, True])
-                            df_final_filtered = df_final_filtered.drop_duplicates(subset=["unique_id"], keep="first")
-                            
-                            st.success(f"📌 تقرير اختبار: **{chosen_exam_filter}** لصف **{filter_grade}** (إجمالي الطلاب: {len(df_final_filtered)})")
-                            
-                            winners = []
-                            for _, r in df_final_filtered.iterrows():
-                                winners.append({
-                                    "name": r["اسم الطالب"],
-                                    "grade": r["الصف الدراسي"],
-                                    "score": r["النسبة"],
-                                    "marks": f"{r['الدرجة']}/{r['المجموع']}",
-                                    "phone": r["رقم الهاتف"]
-                                })
-                            if winners:
-                                render_honor_card_widget(
-                                    filter_grade,
-                                    chosen_exam_filter,
-                                    winners,
-                                    card_id="exam-specific-honor-card"
-                                )
-                            
-                            st.write("---")
-                            st.markdown("#### 📋 جدول تفريغ درجات هذا الاختبار:")
-                            df_display = df_final_filtered.copy()
-                            df_display["النسبة المئوية"] = df_display["النسبة"].apply(lambda x: f"{x}%")
-                            df_display = df_display.drop(columns=["النسبة", "unique_id"])
-                            st.dataframe(df_display, use_container_width=True)
-                            
-                            clean_gr_filename = filter_grade.split(' ')[0]
-                            csv_data = df_final_filtered.drop(columns=["unique_id"]).to_csv(index=False).encode('utf-8-sig')
-                            st.download_button(
-                                label=f"📥 تحميل تقرير درجات هذا الاختبار بصيغة Excel / CSV",
-                                data=csv_data,
-                                file_name=f"Report_{clean_gr_filename}_Exam_{datetime.now().strftime('%Y%m%d')}.csv",
-                                mime="text/csv"
-                            )
-                        else:
-                            st.info("👆 يرجى اختيار الاختبار المطلوب من القائمة المجاورة لعرض تقريره.")
-                    else:
-                        st.info(f"لا توجد أي نتائج مسجلة لصف {filter_grade} حتى الآن.")
-                else:
-                    c_sel_ex.info("يرجى اختيار الصف أولاً")
-                    st.info("👆 يرجى اختيار الصف الدراسي لتظهر لك قائمة اختباراته السابقة والحالية.")
-            else:
-                st.info("لا توجد أي نتائج مسجلة في المنصة بعد.")
+                        chosen_exam_filter = c_sel_ex.selectbox("اختر الاختبار:", ["-- اختر الاختبار --"] + available_exams, key="report_exam_filter")
+                        if chosen_exam_filter != "-- اختر الاختبار --":
+                            df_final_filtered = df_grade_filtered[df_grade_filtered["عنوان الاختبار"] == chosen_exam_filter].drop_duplicates(subset=["unique_id"], keep="first")
+                            winners = [{"name": r["اسم الطالب"], "grade": r["الصف الدراسي"], "score": r["النسبة"], "marks": f"{r['الدرجة']}/{r['المجموع']}", "phone": r["رقم الهاتف"]} for _, r in df_final_filtered.iterrows()]
+                            render_honor_card_widget(filter_grade, chosen_exam_filter, winners, card_id="exam-specific-honor-card")
+                            st.dataframe(df_final_filtered.drop(columns=["unique_id"]), use_container_width=True)
 
         with tab_grades_report:
-            st.markdown("### 🏫 تقرير درجات الطلاب لكل صف على حده (مع منع تكرار الطلاب بالكامل)")
+            st.markdown("### 🏫 تقرير درجات كل صف")
             subs_g = load_submissions()
-            
             if subs_g:
-                selected_report_grade = st.selectbox("اختر الصف الدراسي لعرض كشف درجاته الكامل:", ["-- اختر الصف --"] + GRADES_LIST, key="dedicated_grade_sel")
-                
+                selected_report_grade = st.selectbox("اختر الصف:", ["-- اختر الصف --"] + GRADES_LIST, key="dedicated_grade_sel")
                 if selected_report_grade != "-- اختر الصف --":
-                    g_records = []
-                    for _, s_data in subs_g.items():
-                        if s_data.get('grade') == selected_report_grade:
-                            raw_name = str(s_data.get('full_name', '')).strip()
-                            clean_n = clean_text_for_grading(raw_name)
-                            phone_clean = re.sub(r'\D', '', str(s_data.get('phone', '')))
-                            if len(phone_clean) > 10:
-                                phone_clean = phone_clean[-10:]
-                            unique_key = phone_clean if len(phone_clean) >= 9 else clean_n
-                            
-                            g_records.append({
-                                "unique_id": unique_key,
-                                "name": raw_name,
-                                "phone": s_data.get('phone', ''),
-                                "exam": s_data.get('exam_title', s_data.get('exam_key', '')),
-                                "score": s_data.get('score', 0),
-                                "total": s_data.get('total', 0),
-                                "percentage": s_data.get('percentage', 0),
-                                "timestamp": s_data.get('timestamp', '')
-                            })
-                    
+                    g_records = [{"unique_id": (re.sub(r'\D', '', str(s.get('phone', '')))[-10:] if len(re.sub(r'\D', '', str(s.get('phone', '')))) >= 9 else clean_text_for_grading(s.get('full_name', ''))),
+                                  "name": str(s.get('full_name', '')).strip(),
+                                  "phone": s.get('phone', ''),
+                                  "exam": s.get('exam_title', s.get('exam_key', '')),
+                                  "score": s.get('score', 0),
+                                  "total": s.get('total', 0),
+                                  "percentage": s.get('percentage', 0),
+                                  "timestamp": s.get('timestamp', '')} for _, s in subs_g.items() if s.get('grade'] == selected_report_grade]
                     if g_records:
-                        df_g_raw = pd.DataFrame(g_records)
-                        df_g_raw = df_g_raw.sort_values(by=["percentage", "score", "timestamp"], ascending=[False, False, True])
-                        df_g_raw = df_g_raw.drop_duplicates(subset=["unique_id"], keep="first")
-                        
-                        g_records_clean = df_g_raw.to_dict('records')
-                        
-                        st.success(f"إجمالي عدد الطلاب الفريدين في {selected_report_grade}: **{len(g_records_clean)} طالب**")
-
-                        report_winners = []
-                        for r in sorted(g_records_clean, key=lambda x: (x['percentage'], x['score'], x['timestamp']), reverse=True):
-                            report_winners.append({
-                                "name": r["name"],
-                                "grade": selected_report_grade,
-                                "score": r["percentage"],
-                                "marks": f"{r['score']}/{r['total']}",
-                                "phone": r["phone"]
-                            })
-                        
-                        render_honor_card_widget(
-                            selected_report_grade,
-                            "تقرير درجات الطلاب الكامل",
-                            report_winners,
-                            card_id=f"grade-report-{selected_report_grade.replace(' ', '-').replace('(', '').replace(')', '')}"
-                        )
-                        
-                        st.write("---")
-                        st.markdown("#### 📋 جدول البيانات الكامل:")
-                        df_grade_only = pd.DataFrame([{
-                            "اسم الطالب": x["name"],
-                            "رقم الهاتف": x["phone"],
-                            "عنوان الاختبار": x["exam"],
-                            "الدرجة": x["score"],
-                            "المجموع": x["total"],
-                            "النسبة المئوية (%)": f"{x['percentage']}%",
-                            "وقت التسليم": clean_time_display(x["timestamp"])
-                        } for x in g_records_clean])
-                        
-                        st.dataframe(df_grade_only, use_container_width=True)
-                        
-                        clean_g_name = selected_report_grade.split(' ')[0]
-                        csv_grade_data = df_grade_only.to_csv(index=False).encode('utf-8-sig')
-                        st.download_button(
-                            label=f"📥 تحميل كشف درجات ({selected_report_grade}) بصيغة Excel",
-                            data=csv_grade_data,
-                            file_name=f"Report_{clean_g_name}_{datetime.now().strftime('%Y%m%d')}.csv",
-                            mime="text/csv"
-                        )
-                    else:
-                        st.info(f"لا توجد أي تسليمات مسجلة لطلاب {selected_report_grade}.")
-            else:
-                st.info("لا توجد بيانات مسجلة في المنصة بعد.")
+                        df_g_raw = pd.DataFrame(g_records).drop_duplicates(subset=["unique_id"], keep="first")
+                        report_winners = [{"name": r["name"], "grade": selected_report_grade, "score": r["percentage"], "marks": f"{r['score']}/{r['total']}", "phone": r["phone"]} for _, r in df_g_raw.iterrows()]
+                        render_honor_card_widget(selected_report_grade, "تقرير الكل", report_winners, card_id="grade-report-card")
+                        st.dataframe(df_g_raw, use_container_width=True)
 
         with tab_bank:
-            st.markdown("### 🔍 اختاري الصف الدراسي المطلوب:")
+            st.markdown("### 📚 بنك الاختبارات")
             selected_manage_grade = st.selectbox("الصف المطلوب:", GRADES_LIST, key="sel_mgr_grade")
-            
-            short_c = [k for k, v in GRADES_MAP.items() if v == selected_manage_grade]
-            sc_code = short_c[0] if short_c else "p4"
-            clean_short_grade = selected_manage_grade.split('(')[0].strip()
-            group_link = f"https://mrs-kheffa-quiz.streamlit.app/?g={sc_code}"
-            
             bank = load_exam_bank()
-            active_map = load_active_grades()
             grade_exams = bank.get(selected_manage_grade, {})
-            
-            active_id = active_map.get(selected_manage_grade, list(grade_exams.keys())[-1] if grade_exams else "")
-            active_obj = grade_exams.get(active_id)
-            
-            live_txt = f"[{active_obj.get('unit','')} - {active_obj.get('lesson','')}] {active_obj.get('title','')}" if active_obj else "لا يوجد اختبار نشط حالياً"
-            st.markdown(f"""
-            <div class="grade-focus-header">
-                <h4 style="margin:0; color:#1E40AF;">📁 مجلد: {selected_manage_grade}</h4>
-                <div style="margin-top:6px; font-size:0.95rem;">
-                    🟢 <b>الامتحان المفتوح للطلاب حالياً:</b> <span style="color:#15803D; font-weight:bold;">{live_txt}</span><br>
-                    🔗 <b>رابط الجروب العام:</b> <code>{group_link}</code>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
             if grade_exams:
-                st.markdown(f"**سجل اختبارات هذا الصف مرتبة ومؤرخة بالروابط المرقمة ({len(grade_exams)} اختبارات):**")
-                
-                exam_items = list(grade_exams.items())
-                for idx, (e_id, e_info) in enumerate(exam_items, 1):
-                    is_current = (e_id == active_id)
-                    u_lbl = e_info.get('unit', '')
-                    l_lbl = e_info.get('lesson', '')
-                    t_lbl = e_info.get('title', '')
-                    num_q = len(e_info.get('questions', []))
-                    
-                    time_display_val = clean_time_display(e_info.get('created_at', ''))
-                    numbered_quiz_url = f"https://mrs-kheffa-quiz.streamlit.app/?g={sc_code}&exam={idx}"
-                    
-                    card_class = "card-active" if is_current else "card-idle"
-                    badge_html = '<span class="badge-active">🟢 شغال للطلبة الآن</span>' if is_current else '<span class="badge-idle">⏸️ محفوظ في الأرشيف</span>'
-                    
-                    st.markdown(f"""
-                    <div class="{card_class}">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
-                            <span style="font-size:1.25rem; font-weight:800; color:#1E3A8A;">
-                                <span class="grade-badge-title">{clean_short_grade}</span> 📝 الاختبار رقم ({idx}) &nbsp;—&nbsp; 🕒 {time_display_val}
-                            </span>
-                            {badge_html}
-                        </div>
-                        <div style="font-size:1.05rem; font-weight:600; color:#0F172A; margin-bottom: 8px;">
-                            📌 <b>الوحدة والدرس:</b> [{u_lbl} - {l_lbl}] &nbsp;|&nbsp; <b>الموضوع:</b> {t_lbl} &nbsp;|&nbsp; <b>الأسئلة:</b> {num_q} سؤال
-                        </div>
-                        <div style="background:white; padding:7px 12px; border-radius:6px; border:1.5px solid #93C5FD; font-size:0.92rem;">
-                            🔗 <b>رابط هذا الاختبار المرقم بالصف:</b> <code>{numbered_quiz_url}</code>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    c1, c2 = st.columns([3, 1])
-                    if not is_current:
-                        if c1.button(f"🚀 تشغيل الاختبار رقم ({idx}) لجروب الواتساب الآن", key=f"activate_{e_id}"):
-                            set_active_exam_for_grade(selected_manage_grade, e_id)
-                            st.success(f"تم تفعيل الاختبار رقم ({idx}) ليكون المتاح لجروب {selected_manage_grade}!")
-                            st.rerun()
-                    else:
-                        c1.success(f"✅ الاختبار رقم ({idx}) هو المتاح حالياً لجميع طلاب الجروب")
-                        
-                    if c2.button(f"🗑️ حذف الاختبار ({idx})", key=f"del_{e_id}"):
-                        deleted_ok = delete_exam_from_sheet(e_id, selected_manage_grade)
-                        if deleted_ok:
-                            st.success(f"تم حذف الاختبار رقم ({idx}) نهائياً من السحابة وجوجل شيت!")
-                            st.rerun()
-                        else:
-                            st.error("فشل الحذف من السحابة. يرجى المحاولة مرة أخرى.")
-                    st.write("")
-            else:
-                st.info(f"لا توجد اختبارات محفوظة في مجلد {selected_manage_grade} بعد.")
+                for idx, (e_id, e_info) in enumerate(grade_exams.items(), 1):
+                    st.write(f"📝 {e_info.get('title')} ({len(e_info.get('questions', []))} سؤال)")
+                    if st.button(f"حذف الاختبار {idx}", key=f"del_{e_id}"):
+                        delete_exam_from_sheet(e_id, selected_manage_grade)
+                        st.rerun()
 
         with tab_pdf:
-            st.markdown("### 📄 المعاينة البصرية والطباعة بصيغة PDF (مناقشة الشرح مع الطلاب)")
-            pdf_grade = st.selectbox("اختر الصف الدراسي للاختبار:", GRADES_LIST, key="pdf_grade_sel")
+            st.markdown("### 📄 معاينة الاختبار PDF")
+            pdf_grade = st.selectbox("الصف:", GRADES_LIST, key="pdf_grade_sel")
             bank_pdf = load_exam_bank()
             grade_exams_pdf = bank_pdf.get(pdf_grade, {})
-            
             if grade_exams_pdf:
-                exam_titles_map = {f"[{e_info.get('unit','')}-{e_info.get('lesson','')}] {e_info.get('title','')} ({clean_time_display(e_info.get('created_at',''))})": e_id for e_id, e_info in grade_exams_pdf.items()}
-                chosen_exam_label = st.selectbox("اختر الاختبار المطلوب:", list(exam_titles_map.keys()), key="pdf_exam_sel")
-                
-                if chosen_exam_label:
-                    target_e_id = exam_titles_map[chosen_exam_label]
-                    selected_exam_obj = grade_exams_pdf[target_e_id]
-                    
-                    clean_grade_prefix = pdf_grade.split(' ')[0] + "_" + pdf_grade.split(' ')[1]
-                    clean_exam_title_str = re.sub(r'[^\w\s]', '', selected_exam_obj.get('title', 'Quiz')).replace(' ', '_')
-                    suggested_filename = f"Model_Answers_{clean_grade_prefix}_{clean_exam_title_str}"
-                    
-                    questions_html = ""
-                    for q_idx, q_item in enumerate(selected_exam_obj.get('questions', []), 1):
-                        q_txt = q_item.get('question', q_item.get('premise', ''))
-                        ans_txt = q_item.get('answer', '')
-                        
-                        opts_html = ""
-                        if q_item.get('options'):
-                            opts_html = "<div style='margin-top:6px; color:#475569; font-size:0.95rem;'><b>Options:</b> " + ", ".join(q_item.get('options')) + "</div>"
-                        elif q_item.get('box_words'):
-                            opts_html = "<div style='margin-top:6px; color:#475569; font-size:0.95rem;'><b>Box Words:</b> [ " + " — ".join(q_item.get('box_words')) + " ]</div>"
-                            
-                        questions_html += f"""
-                        <div style="background:#F8FAFC; border:1px solid #CBD5E1; border-radius:10px; padding:15px; margin-bottom:15px; page-break-inside: avoid;">
-                            <div style="font-size:1.1rem; font-weight:bold; color:#1E3A8A; margin-bottom:6px;">Q{q_idx}: {q_txt}</div>
-                            {opts_html}
-                            <div style="margin-top:10px; background:#DCFCE7; border:1px solid #22C55E; color:#166534; padding:8px 12px; border-radius:6px; font-weight:bold; font-size:0.98rem;">
-                                👉 Model Answer: <span style="color:#15803D;">{ans_txt}</span>
-                            </div>
-                        </div>
-                        """
-                        
-                    printable_html = f"""
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <title>{suggested_filename}</title>
-                        <meta charset="utf-8">
-                    </head>
-                    <body>
-                    <div style="direction: ltr; font-family: Arial, sans-serif; background: white; padding: 25px; border-radius: 14px; border: 2px solid #3B82F6; max-width: 800px; margin: 0 auto;">
-                        <div style="background: linear-gradient(135deg, #1E3A8A, #3B82F6); color: white; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
-                            <h2 style="margin:0; font-size:1.5rem;">🎓 ENGLISH ASSESSMENT & MODEL ANSWERS</h2>
-                            <h3 style="margin:5px 0; font-size:1.1rem; color:#E0E7FF;">Mrs. Kheffa Eletreby — Senior English Teacher</h3>
-                            <p style="margin:0; font-size:0.9rem; color:#DBEAFE;">📱 WhatsApp: <b>01090570624</b> | 📚 Grade: <b>{pdf_grade}</b></p>
-                            <p style="margin:5px 0 0 0; font-size:0.95rem; color:#FEF08A;">📝 Quiz: <b>{selected_exam_obj.get('title')}</b> ({selected_exam_obj.get('unit')} - {selected_exam_obj.get('lesson')})</p>
-                        </div>
-                        <div>
-                            {questions_html}
-                        </div>
-                        <div style="text-align:center; margin-top:20px; font-size:0.85rem; color:#64748B; border-top:1px dashed #CBD5E1; padding-top:10px;">
-                            🌟 بالتوفيق دائماً لطلابنا المتميزين — Mrs. Kheffa Eletreby 🌟
-                        </div>
-                    </div>
-                    </body>
-                    </html>
-                    """
-                    
-                    st.markdown("### 👀 معاينة التصميم الملون قبل الطباعة:")
-                    st.components.v1.html(printable_html, height=600, scrolling=True)
-                    
-                    st.markdown("---")
-                    st.info(f"💡 **طريقة الحفظ التلقائي:** عند الضغط بزر الماوس الأيمن داخل إطار المعاينة واختيار **Print (طباعة)**، سيقترح عليك المتصفح تلقائياً اسم الملف: `📁 {suggested_filename}` لحفظه مباشرة بصيغة PDF!")
-            else:
-                st.info(f"لا توجد اختبارات محفوظة لصف {pdf_grade} لتوليد مستندها.")
+                chosen_ex = st.selectbox("الاختبار:", list(grade_exams_pdf.keys()), key="pdf_ex_sel")
+                if chosen_ex:
+                    ex_obj = grade_exams_pdf[chosen_ex]
+                    for idx, q in enumerate(ex_obj.get('questions', []), 1):
+                        st.write(f"Q{idx}: {q.get('question')} -> Ans: {q.get('answer')}")
 
         with tab_new:
-            st.markdown("### ➕ إضافة اختبار جديد (قراءة تلقائية لملفات الـ PDF والـ OCR)")
+            st.markdown("### ➕ إضافة اختبار (سواء من ملف PDF أو نسخ نص امتحان HTML جاهز)")
+            sel_grade = st.selectbox("الصف:", GRADES_LIST, key="new_exam_grade")
+            quiz_unit = st.text_input("الوحدة:", "Unit 1", key="exam_unit_input")
+            quiz_lesson = st.text_input("الدرس:", "Lesson 1", key="exam_lesson_input")
+            quiz_title = st.text_input("عنوان الاختبار:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
             
-            c_g, c_u, c_l = st.columns([2, 1, 1])
-            sel_grade = c_g.selectbox("الصف الدراسي المستهدف:", GRADES_LIST, key="new_exam_grade")
-            quiz_unit = c_u.text_input("الوحدة (Unit):", "Unit 1", key="exam_unit_input")
-            quiz_lesson = c_l.text_input("الدرس (Lesson):", "Lesson 1", key="exam_lesson_input")
-            quiz_title = st.text_input("عنوان الاختبار أو موضوعه:", f"{quiz_unit} - {quiz_lesson} Assessment", key="exam_title_input")
-            
-            uploaded_file = st.file_uploader("📂 ارفعي ملف الأسئلة (.pdf أو صورة OCR / Screenshot):", type=["pdf", "docx", "txt", "png", "jpg", "jpeg"], key="quiz_file_uploader")
+            uploaded_file = st.file_uploader("📂 ارفعي ملف الأسئلة (.pdf أو .txt أو .docx):", type=["pdf", "docx", "txt"], key="quiz_file_uploader")
             
             if 'extracted_file_text' not in st.session_state:
                 st.session_state['extracted_file_text'] = ""
@@ -1297,98 +1008,68 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 try:
                     if uploaded_file.name.endswith('.txt'):
                         st.session_state['extracted_file_text'] = uploaded_file.read().decode('utf-8')
-                        st.success("📁 تم قراءة ملف النصوص بنجاح ووضعه في مربع النص أدناه تلقائياً!")
+                        st.success("📁 تم قراءة ملف النصوص بنجاح!")
                     elif uploaded_file.name.endswith('.docx'):
                         import docx
                         doc = docx.Document(uploaded_file)
                         st.session_state['extracted_file_text'] = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
-                        st.success("📁 تم قراءة ملف الـ Word بنجاح ووضعه في مربع النص أدناه تلقائياً!")
+                        st.success("📁 تم قراءة ملف الـ Word بنجاح!")
                     elif uploaded_file.name.endswith('.pdf'):
                         reader = pypdf.PdfReader(uploaded_file)
-                        extracted_pages = []
-                        for page in reader.pages:
-                            txt = page.extract_text()
-                            if txt:
-                                extracted_pages.append(txt)
-                        extracted_content = "\n".join(extracted_pages)
-                        if extracted_content.strip():
-                            st.session_state['extracted_file_text'] = extracted_content
-                            st.success("📄 تم فك واستخراج نصوص الـ PDF بالكامل ولصقها في مربع النص أدناه تلقائياً!")
+                        extracted_pages = [page.extract_text() for page in reader.pages if page.extract_text()]
+                        pdf_content = "\n".join(extracted_pages)
+                        if pdf_content.strip():
+                            st.session_state['extracted_file_text'] = pdf_content
+                            st.success("📄 تم استخراج نصوص الـ PDF بالكامل!")
                         else:
-                            st.warning("⚠️ ملف الـ PDF ممسوح ضوئياً (صورة). يرجى لصق النصوص يدوياً أو استخدام صورة.")
-                    elif uploaded_file.name.endswith(('.png', '.jpg', '.jpeg')):
-                        if OCR_AVAILABLE:
-                            img = Image.open(uploaded_file)
-                            ocr_text = pytesseract.image_to_string(img)
-                            st.session_state['extracted_file_text'] = ocr_text
-                            st.success("🖼️ تم تحليل الصورة وقراءة النصوص عبر تقنية OCR ولصقها تلقائياً!")
-                        else:
-                            st.warning("⚠️ مكتبة الـ OCR غير مفعلة. يرجى لصق النصوص يدوياً.")
+                            st.warning("⚠️ الملف مصور (Scanned). يرجى لصق محتوى الـ HTML أو الأسئلة في المربع أدناه مباشرة.")
                 except Exception as e:
-                    st.error(f"⚠️ حدث خطأ أثناء فك الملف: {e}")
+                    st.error(f"⚠️ خطأ: {e}")
 
-            raw_text = st.text_area("ألصقي نص الأسئلة المستخرجة هنا:", value=st.session_state['extracted_file_text'], height=220, key="new_raw_text")
+            raw_text = st.text_area("ألصقي نص الأسئلة أو امتحان الـ HTML هنا:", value=st.session_state['extracted_file_text'], height=250, key="new_raw_text")
             
-            if st.button("🔍 فحص واستبعاد الأسئلة الوهمية تلقائياً (Anti-Dummy)", key="preview_btn"):
+            if st.button("🔍 فحص ومعاينة الأسئلة", key="preview_btn"):
                 if raw_text.strip():
                     raw_parsed = parse_text_locally(raw_text)
                     cleaned_parsed, removed_count = auto_clean_quiz_questions(raw_parsed)
-                    
                     if removed_count > 0:
-                        st.warning(f"⚠️ تنبيه: تم رشف وحذف ({removed_count}) سؤال وهمي أو تجريبي واستبعادهم تماماً ليبقى الكويز نظيفاً 100%!")
-                    elif not cleaned_parsed:
-                        st.error("⚠️ عذراً، لم تبق أي أسئلة صالحة بعد التنظيف. يرجى مراجعة النص المنسوخ.")
-                    else:
-                        st.success("🎉 مبروك! جميع الأسئلة سليمة 100% وخالية من أي كلمات وهمية.")
-                        
+                        st.warning(f"⚠️ تم تنبيه وحذف ({removed_count}) سؤال غير مكتمل ليبقى الكويز نظيفاً!")
                     if cleaned_parsed:
-                        st.markdown("---")
-                        st.markdown(f"### 👀 معاينة الأسئلة الصالحة للاختبار (إجمالي: {len(cleaned_parsed)} سؤال):")
+                        st.success(f"🎉 تم قراءة وفحص ({len(cleaned_parsed)}) سؤال بنجاح وجاهزة للحفظ!")
                         for p_idx, p_q in enumerate(cleaned_parsed):
-                            st.markdown(f"**Q{p_idx + 1} [{p_q.get('type')}]:** {p_q.get('question', p_q.get('premise', ''))}")
-                            if p_q.get('options'):
-                                st.write(f"الخيارات: {p_q.get('options')}")
-                            if p_q.get('box_words'):
-                                st.write(f"صندوق الكلمات: {p_q.get('box_words')}")
-                            st.markdown(f"🟢 **الإجابة النموذجية المسجلة:** `{p_q.get('answer')}`")
-                            st.write("---")
-                        st.info("الأسئلة نظيفة وآمنة تماماً وجاهزة للنشر للطلاب!")
+                            st.markdown(f"**Q{p_idx + 1}:** {p_q.get('question', p_q.get('premise', ''))} | 🟢 **الإجابة:** `{p_q.get('answer')}`")
                 else:
-                    st.warning("يرجى لصق نص الأسئلة أو رفع ملف أولاً لفحصها ومعاينتها.")
-            
+                    st.warning("يرجى لصق النصوص أولاً.")
+
             col_save_draft, col_save_pub = st.columns([1, 1])
-            save_as_draft = col_save_draft.button("📁 حفظ في الأرشيف فقط (بدون تفعيل حالياً)")
+            save_as_draft = col_save_draft.button("📁 حفظ في الأرشيف")
             save_and_pub = col_save_pub.button("🚀 حفظ وتفعيل للطلاب فوراً")
             
             if save_as_draft or save_and_pub:
                 if raw_text.strip():
                     raw_parsed = parse_text_locally(raw_text)
                     parsed, _ = auto_clean_quiz_questions(raw_parsed)
-                    
                     if parsed and len(parsed) > 0:
                         exam_id = f"exam_{int(datetime.now().timestamp())}"
                         exam_payload = {
-                            "title": quiz_title.strip(),
+                            "title": quiz_title.submit if hasattr(quiz_title, 'submit') else quiz_title.strip(),
                             "unit": quiz_unit.strip(),
                             "lesson": quiz_lesson.strip(),
                             "grade": sel_grade,
                             "questions": parsed,
                             "created_at": get_current_egypt_time()
                         }
-                        
-                        saved_ok = save_exam_to_sheet(exam_id, sel_grade, exam_payload, get_current_egypt_time())
-                        
-                        if saved_ok:
+                        if save_exam_to_sheet(exam_id, sel_grade, exam_payload, get_current_egypt_time()):
                             if save_and_pub:
                                 set_active_exam_for_grade(sel_grade, exam_id)
-                                st.success(f"🎉 تم فحص وحفظ وتفعيل '{quiz_title}' لصف {sel_grade} بنجاح تام على جوجل شيت بدون أي أخطاء أو كلمات وهمية!")
+                                st.success("🎉 تم حفظ وتفعيل الاختبار بنجاح!")
                             else:
-                                st.success(f"📁 تم فحص وحفظ '{quiz_title}' في أرشيف صف {sel_grade} بنجاح على جوجل شيت!")
+                                st.success("📁 تم حفظ الاختبار في الأرشيف بنجاح!")
                             st.rerun()
                         else:
-                            st.error("⚠️ حدث خطأ أثناء الاتصال بجوجل شيت. يرجى التأكد من صحة الرابط.")
+                            st.error("⚠️ حدث خطأ أثناء الحفظ في جوجل شيت.")
                     else:
-                        st.error("لا توجد أسئلة صالحة بعد الفحص والتنظيف للحفظ.")
+                        st.error("لا توجد أسئلة صالحة للحفظ.")
                 else:
                     st.error("يرجى لصق نص الأسئلة أولاً.")
     elif admin_pass:
