@@ -320,7 +320,6 @@ def set_active_exam_for_grade(grade, exam_id):
 def clean_text_for_grading(text):
     if not text:
         return ""
-    # قاعدة ذكية متكاملة تتغاضى عن الترقيم، الهمزات، والمسافات
     punctuation_to_remove = string.punctuation + '؟،؛«»ـ“”‘’'
     text = text.translate(str.maketrans('', '', punctuation_to_remove))
     text = text.lower()
@@ -535,6 +534,9 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
         clean_g_tag = w.get('grade', '').split('(')[0].strip()
         grade_badge = f"<span style='background:#E0E7FF; color:#1E40AF; padding:3px 9px; border-radius:8px; font-size:0.85rem; font-weight:700; margin-left:8px;'>{clean_g_tag}</span>" if clean_g_tag else ""
         
+        # إضافة عرض وقت الاختبار داخل بطاقة التكريم إن وجد
+        time_badge = f"<span style='font-size:0.8rem; color:#FEF08A; margin-right:8px;'>🕒 {clean_time_display(w.get('timestamp',''))}</span>" if w.get('timestamp') else ""
+
         rows_html += f"""
         <div style="display:flex; justify-content:space-between; align-items:center; background:#FFFFFF; padding:10px 16px; border-radius:10px; margin-bottom:8px; box-shadow:0 2px 4px rgba(0,0,0,0.04); border-right: 5px solid {color};">
             <div style="display:flex; align-items:center; gap:8px;">
@@ -542,8 +544,11 @@ def render_honor_card_widget(grade_name, exam_name, winners_list, card_id="honor
                 <span style="font-size:1.05rem; font-weight:800; color:#1E293B;">{w['name']}</span>
                 {grade_badge}
             </div>
-            <div style="background:{color}; color:white; padding:4px 12px; border-radius:15px; font-weight:bold; font-size:0.95rem;">
-                {w['score']}% ({w['marks']})
+            <div style="display:flex; align-items:center; gap:10px;">
+                {time_badge}
+                <div style="background:{color}; color:white; padding:4px 12px; border-radius:15px; font-weight:bold; font-size:0.95rem;">
+                    {w['score']}% ({w['marks']})
+                </div>
             </div>
         </div>
         """
@@ -905,25 +910,27 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                 df_selected_week = df_selected_week.sort_values(by=["النسبة", "الدرجة", "وقت التسليم"], ascending=[False, False, True])
                 df_selected_week = df_selected_week.drop_duplicates(subset=["unique_id"], keep="first")
                 if not df_selected_week.empty:
-                    wk_winners = [{"name": r["اسم الطالب"], "grade": r["الصف الدراسي"], "score": r["النسبة"], "marks": f"{r['الدرجة']}/{r['المجموع']}", "phone": r["رقم الهاتف"]} for _, r in df_selected_week.iterrows()]
+                    wk_winners = [{"name": r["اسم الطالب"], "grade": r["الصف الدراسي"], "score": r["النسبة"], "marks": f"{r['الدرجة']}/{r['المجموع']}", "phone": r["رقم الهاتف"], "timestamp": r["وقت التسليم"]} for _, r in df_selected_week.iterrows()]
                     render_honor_card_widget(f"أوائل الأسبوع", chosen_week, wk_winners, card_id="weekly-honor-card")
                     st.dataframe(df_selected_week.drop(columns=["week_idx", "unique_id"]), use_container_width=True)
                 else:
                     st.info("لا توجد نتائج مسجلة لهذا الأسبوع.")
 
         with tab_reports:
-            st.markdown("### 📊 تقرير درجات الطلاب")
+            st.markdown("### 📊 تقرير درجات الطلاب (مع أوقات التسليم)")
             subs = load_submissions()
             if subs:
-                records = [{"unique_id": (re.sub(r'\D', '', str(s.get('phone', '')))[-10:] if len(re.sub(r'\D', '', str(s.get('phone', '')))) >= 9 else clean_text_for_grading(s.get('full_name', ''))),
-                            "اسم الطالب": str(s.get('full_name', '')).strip(),
-                            "الصف الدراسي": s.get('grade', ''),
-                            "رقم الهاتف": s.get('phone', ''),
-                            "عنوان الاختبار": s.get('exam_title', s.get('exam_key', '')),
-                            "الدرجة": s.get('score', 0),
-                            "المجموع": s.get('total', 0),
-                            "النسبة": s.get('percentage', 0),
-                            "وقت التسليم": clean_time_display(s.get('timestamp', ''))} for _, s in subs.items()]
+                records = [{
+                    "unique_id": (re.sub(r'\D', '', str(s.get('phone', '')))[-10:] if len(re.sub(r'\D', '', str(s.get('phone', '')))) >= 9 else clean_text_for_grading(s.get('full_name', ''))),
+                    "اسم الطالب": str(s.get('full_name', '')).strip(),
+                    "الصف الدراسي": s.get('grade', ''),
+                    "رقم الهاتف": s.get('phone', ''),
+                    "عنوان الاختبار": s.get('exam_title', s.get('exam_key', '')),
+                    "الدرجة": s.get('score', 0),
+                    "المجموع": s.get('total', 0),
+                    "النسبة": s.get('percentage', 0),
+                    "وقت التسليم": clean_time_display(s.get('timestamp', ''))
+                } for _, s in subs.items()]
                 df_all = pd.DataFrame(records)
                 c_sel_gr, c_sel_ex = st.columns([1.5, 2])
                 filter_grade = c_sel_gr.selectbox("اختر الصف:", ["-- اختر الصف --"] + GRADES_LIST, key="report_grade_filter")
@@ -934,28 +941,40 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                         chosen_exam_filter = c_sel_ex.selectbox("اختر الاختبار:", ["-- اختر الاختبار --"] + available_exams, key="report_exam_filter")
                         if chosen_exam_filter != "-- اختر الاختبار --":
                             df_final_filtered = df_grade_filtered[df_grade_filtered["عنوان الاختبار"] == chosen_exam_filter].drop_duplicates(subset=["unique_id"], keep="first")
-                            winners = [{"name": r["اسم الطالب"], "grade": r["الصف الدراسي"], "score": r["النسبة"], "marks": f"{r['الدرجة']}/{r['المجموع']}", "phone": r["رقم الهاتف"]} for _, r in df_final_filtered.iterrows()]
+                            winners = [{"name": r["اسم الطالب"], "grade": r["الصف الدراسي"], "score": r["النسبة"], "marks": f"{r['الدرجة']}/{r['المجموع']}", "phone": r["رقم الهاتف"], "timestamp": r["وقت التسليم"]} for _, r in df_final_filtered.iterrows()]
                             render_honor_card_widget(filter_grade, chosen_exam_filter, winners, card_id="exam-specific-honor-card")
                             st.dataframe(df_final_filtered.drop(columns=["unique_id"]), use_container_width=True)
 
         with tab_grades_report:
-            st.markdown("### 🏫 تقرير درجات كل صف")
+            st.markdown("### 🏫 تقرير درجات كل صف (مع أوقات التسليم بدقة)")
             subs_g = load_submissions()
             if subs_g:
                 selected_report_grade = st.selectbox("اختر الصف:", ["-- اختر الصف --"] + GRADES_LIST, key="dedicated_grade_sel")
                 if selected_report_grade != "-- اختر الصف --":
-                    g_records = [{"unique_id": (re.sub(r'\D', '', str(s.get('phone', '')))[-10:] if len(re.sub(r'\D', '', str(s.get('phone', '')))) >= 9 else clean_text_for_grading(s.get('full_name', ''))),
-                                  "name": str(s.get('full_name', '')).strip(),
-                                  "phone": s.get('phone', ''),
-                                  "exam": s.get('exam_title', s.get('exam_key', '')),
-                                  "score": s.get('score', 0),
-                                  "total": s.get('total', 0),
-                                  "percentage": s.get('percentage', 0),
-                                  "timestamp": s.get('timestamp', '')} for _, s in subs_g.items() if s.get('grade') == selected_report_grade]
+                    g_records = [{
+                        "unique_id": (re.sub(r'\D', '', str(s.get('phone', '')))[-10:] if len(re.sub(r'\D', '', str(s.get('phone', '')))) >= 9 else clean_text_for_grading(s.get('full_name', ''))),
+                        "اسم الطالب": str(s.get('full_name', '')).strip(),
+                        "رقم الهاتف": s.get('phone', ''),
+                        "عنوان الاختبار": s.get('exam_title', s.get('exam_key', '')),
+                        "الدرجة": s.get('score', 0),
+                        "المجموع": s.get('total', 0),
+                        "النسبة المئوية (%)": f"{s.get('percentage', 0)}%",
+                        "وقت التسليم": clean_time_display(s.get('timestamp', ''))
+                    } for _, s in subs_g.items() if s.get('grade') == selected_report_grade]
+                    
                     if g_records:
                         df_g_raw = pd.DataFrame(g_records).drop_duplicates(subset=["unique_id"], keep="first")
-                        report_winners = [{"name": r["name"], "grade": selected_report_grade, "score": r["percentage"], "marks": f"{r['score']}/{r['total']}", "phone": r["phone"]} for _, r in df_g_raw.iterrows()]
-                        render_honor_card_widget(selected_report_grade, "تقرير الكل", report_winners, card_id="grade-report-card")
+                        
+                        report_winners = [{
+                            "name": r["اسم الطالب"],
+                            "grade": selected_report_grade,
+                            "score": float(r["النسبة المئوية (%)"].replace("%","")),
+                            "marks": f"{r['الدرجة']}/{r['المجموع']}",
+                            "phone": r["رقم الهاتف"],
+                            "timestamp": r["وقت التسليم"]
+                        } for _, r in df_g_raw.iterrows()]
+                        
+                        render_honor_card_widget(selected_report_grade, "تقرير الكشف الكامل", report_winners, card_id="grade-report-card")
                         st.dataframe(df_g_raw, use_container_width=True)
 
         with tab_bank:
