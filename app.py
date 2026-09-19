@@ -320,7 +320,7 @@ def set_active_exam_for_grade(grade, exam_id):
 def clean_text_for_grading(text):
     if not text:
         return ""
-    # إزالة الترقيم والمسافات الزائدة وحالة الحروف لتجنب أي أخطاء مطبعية
+    # قاعدة ذكية متكاملة تتغاضى عن الترقيم، الهمزات، والمسافات
     punctuation_to_remove = string.punctuation + '؟،؛«»ـ“”‘’'
     text = text.translate(str.maketrans('', '', punctuation_to_remove))
     text = text.lower()
@@ -759,35 +759,30 @@ if active_exam and active_exam.get("questions"):
                             """, unsafe_allow_html=True)
                             displayed_boxes.add(box_key)
                     
-                    # 1. الاختيار من متعدد
                     if q_type in ["mcq", "reading"]:
                         st.write(q.get('question', ''))
                         opt_list = ["-- اختر الإجابة الصحيحة --"] + q.get('options', [])
                         chosen_opt = st.selectbox("Choose correct answer:", options=opt_list, key=f"ans_mcq_{idx}")
                         user_answers[idx] = "" if chosen_opt == "-- اختر الإجابة الصحيحة --" else chosen_opt
                         
-                    # 2. إكمال الفراغات من الصندوق (قائمة منسدلة لمنع الأخطاء الإملائية)
                     elif q_type == "box_complete":
                         st.write(q.get('question', ''))
                         box_opts = ["-- Select Word --"] + q.get('box_words', [])
                         chosen_box = st.selectbox("Select word / اختر الكلمة:", options=box_opts, key=f"ans_box_{idx}")
                         user_answers[idx] = "" if chosen_box == "-- Select Word --" else chosen_box
                         
-                    # 3. التوصيل (قائمة منسدلة)
                     elif q_type == "matching":
                         st.write(f"🔹 Match: **{q.get('premise', '')}**")
                         match_opts = ["-- Select Match --"] + q.get('options', [])
                         chosen_match = st.selectbox("Select match:", options=match_opts, key=f"ans_match_{idx}")
                         user_answers[idx] = "" if chosen_match == "-- Select Match --" else chosen_match
                         
-                    # 4. إعادة الترتيب (Multi-select بالترتيب الآمن لمنع كتابة الجمل يدوياً)
                     elif q_type == "reorder":
                         st.write(q.get('question', 'Rearrange the following words:'))
                         words_list = q.get('scrambled_words', [])
                         selected_words = st.multiselect("Tap words in correct order (اضغط على الكلمات بالترتيب الصحيح):", options=words_list, key=f"ans_reorder_{idx}")
                         user_answers[idx] = " ".join(selected_words)
                         
-                    # 5. النص الحر مع فحص مرن للتصحيح
                     elif q_type == "fill_text":
                         st.write(q.get('question', ''))
                         user_answers[idx] = st.text_input("Write your answer:", key=f"ans_filltxt_{idx}")
@@ -800,7 +795,6 @@ if active_exam and active_exam.get("questions"):
                     st.session_state['submitted_answers'] = user_answers
                     st.rerun()
 
-        # Results View (مع دالة فحص مرنة للغاية تتجاهل الفواصل والنقاط وحالة الحروف)
         if st.session_state.get('exam_submitted', False):
             st.subheader("📋 Results & Model Answers")
             score = 0
@@ -816,7 +810,6 @@ if active_exam and active_exam.get("questions"):
                 ans = user_answers.get(idx, "")
                 correct = q.get('answer', '')
                 
-                # استخدام دالة التنظيف الفائقة لتجاهل النقاط والفواصل والمسافات
                 cleaned_user_ans = clean_text_for_grading(str(ans))
                 cleaned_correct_ans = clean_text_for_grading(str(correct))
                 
@@ -824,9 +817,7 @@ if active_exam and active_exam.get("questions"):
                 if cleaned_user_ans == cleaned_correct_ans and ans not in ["-- اختر الإجابة الصحيحة --", "-- Select Word --", "-- Select Match --", "", None]:
                     is_correct = True
                 
-                # دعم إضافي خاص لأسئلة الترتيب لضمان التطابق الذكي
                 if q_type == "reorder" and not is_correct:
-                    # تفكيك الكلمات ومقارنتها بغض النظر عن ترتيب الإدخال البسيط لو تطلب الأمر
                     user_words_set = set(cleaned_user_ans.split())
                     correct_words_set = set(cleaned_correct_ans.split())
                     if user_words_set == correct_words_set and len(cleaned_user_ans.split()) == len(cleaned_correct_ans.split()):
@@ -859,7 +850,6 @@ if active_exam and active_exam.get("questions"):
 elif resolved_grade:
     st.info(f"👋 لا يوجد اختبار نشط حالياً لصف **{resolved_grade}**.")
 
-# --- TEACHER CONTROL PORTAL & SINGLE-GRADE FOCUS ARCHIVE ---
 st.write("---")
 with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلمة)", expanded=False):
     admin_pass = st.text_input("Enter Admin Password:", type="password", key="sec_admin_pass")
@@ -961,7 +951,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                                   "score": s.get('score', 0),
                                   "total": s.get('total', 0),
                                   "percentage": s.get('percentage', 0),
-                                  "timestamp": s.get('timestamp', '')} for _, s in subs_g.items() if s.get('grade'] == selected_report_grade]
+                                  "timestamp": s.get('timestamp', '')} for _, s in subs_g.items() if s.get('grade') == selected_report_grade]
                     if g_records:
                         df_g_raw = pd.DataFrame(g_records).drop_duplicates(subset=["unique_id"], keep="first")
                         report_winners = [{"name": r["name"], "grade": selected_report_grade, "score": r["percentage"], "marks": f"{r['score']}/{r['total']}", "phone": r["phone"]} for _, r in df_g_raw.iterrows()]
@@ -1052,7 +1042,7 @@ with st.expander("🔒 Admin Portal & Exam Bank (لوحة تحكم المعلم�
                     if parsed and len(parsed) > 0:
                         exam_id = f"exam_{int(datetime.now().timestamp())}"
                         exam_payload = {
-                            "title": quiz_title.submit if hasattr(quiz_title, 'submit') else quiz_title.strip(),
+                            "title": quiz_title.strip(),
                             "unit": quiz_unit.strip(),
                             "lesson": quiz_lesson.strip(),
                             "grade": sel_grade,
